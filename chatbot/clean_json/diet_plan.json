@@ -1,0 +1,50 @@
+{
+    "diet": [
+        {
+            "meal_time": "breakfast",
+            "items": [
+                "3 scrambled eggs",
+                "1 slice of whole grain toast",
+                "1/2 avocado",
+                "1 cup of Greek yogurt with berries"
+            ],
+            "calories": 500
+        },
+        {
+            "meal_time": "lunch",
+            "items": [
+                "150g grilled chicken breast",
+                "1 cup of quinoa",
+                "1 cup of steamed broccoli",
+                "1 tbsp olive oil"
+            ],
+            "calories": 600
+        },
+        {
+            "meal_time": "snack",
+            "items": [
+                "1 handful of almonds",
+                "1 apple"
+            ],
+            "calories": 250
+        },
+        {
+            "meal_time": "dinner",
+            "items": [
+                "150g grilled salmon",
+                "1 cup of brown rice",
+                "1 cup of saut\u00c3\u00a9ed spinach",
+                "1 tbsp olive oil"
+            ],
+            "calories": 650
+        },
+        {
+            "meal_time": "post-workout",
+            "items": [
+                "1 scoop of whey protein",
+                "1 banana"
+            ],
+            "calories": 300
+        }
+    ]
+}

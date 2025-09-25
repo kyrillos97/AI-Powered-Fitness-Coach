@@ -1,0 +1,97 @@
+{
+    "diet_plan": {
+        "diet": [
+            {
+                "meal_time": "breakfast",
+                "items": [
+                    "1 scrambled egg",
+                    "1 slice of whole grain toast",
+                    "1/4 avocado",
+                    "1/2 cup of mixed berries"
+                ],
+                "calories": 300
+            },
+            {
+                "meal_time": "mid-morning snack",
+                "items": [
+                    "1 small apple",
+                    "5 almonds"
+                ],
+                "calories": 150
+            },
+            {
+                "meal_time": "lunch",
+                "items": [
+                    "1 grilled chicken breast (120g)",
+                    "1/2 cup of quinoa",
+                    "1 cup of steamed broccoli",
+                    "1 tsp of olive oil"
+                ],
+                "calories": 400
+            },
+            {
+                "meal_time": "afternoon snack",
+                "items": [
+                    "1/2 cup of Greek yogurt (non-fat)",
+                    "1 tsp of honey",
+                    "1/4 cup of mixed nuts"
+                ],
+                "calories": 150
+            },
+            {
+                "meal_time": "dinner",
+                "items": [
+                    "1 grilled salmon fillet (120g)",
+                    "1/2 cup of roasted sweet potatoes",
+                    "1 cup of sautéed spinach",
+                    "1 tsp of olive oil"
+                ],
+                "calories": 450
+            },
+            {
+                "meal_time": "evening snack (optional)",
+                "items": [
+                    "1 cup of herbal tea",
+                    "1/4 cup of mixed berries"
+                ],
+                "calories": 30
+            }
+        ]
+    },
+    "workout_plan": {
+        "workout": {
+            "Warm-up (5-10 minutes)": {
+                "reps": [
+                    1,
+                    1,
+                    1
+                ],
+                "rest_minutes": 0.0
+            },
+            "Bodyweight Squats": {
+                "reps": [
+                    15,
+                    15,
+                    15
+                ],
+                "rest_minutes": 1.5
+            },
+            "Plank": {
+                "reps": [
+                    30,
+                    30,
+                    30
+                ],
+                "rest_minutes": 1.5
+            },
+            "Cool-down (5-10 minutes)": {
+                "reps": [
+                    1,
+                    1,
+                    1
+                ],
+                "rest_minutes": 0.0
+            }
+        }
+    }
+}

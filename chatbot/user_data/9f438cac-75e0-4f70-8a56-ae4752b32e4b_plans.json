@@ -1,0 +1,219 @@
+{
+    "diet_plan": {
+        "diet": [
+            {
+                "meal_time": "breakfast",
+                "items": [
+                    "3 scrambled eggs",
+                    "1 slice of whole grain toast",
+                    "1/2 avocado",
+                    "1 cup of Greek yogurt with berries"
+                ],
+                "calories": 500
+            },
+            {
+                "meal_time": "lunch",
+                "items": [
+                    "150g grilled chicken breast",
+                    "1 cup of quinoa",
+                    "1 cup of steamed broccoli",
+                    "1 tbsp olive oil"
+                ],
+                "calories": 600
+            },
+            {
+                "meal_time": "snack",
+                "items": [
+                    "1 handful of almonds",
+                    "1 apple"
+                ],
+                "calories": 250
+            },
+            {
+                "meal_time": "dinner",
+                "items": [
+                    "150g grilled salmon",
+                    "1 cup of brown rice",
+                    "1 cup of sautéed spinach",
+                    "1 tbsp olive oil"
+                ],
+                "calories": 650
+            },
+            {
+                "meal_time": "post-workout",
+                "items": [
+                    "1 scoop of whey protein",
+                    "1 banana"
+                ],
+                "calories": 300
+            }
+        ]
+    },
+    "workout_plan": {
+        "workout": {
+            "Monday": {
+                "exercises": {
+                    "Bench Press": {
+                        "reps": [
+                            8,
+                            10,
+                            12
+                        ],
+                        "rest_minutes": 1.5
+                    },
+                    "Squats": {
+                        "reps": [
+                            10,
+                            12,
+                            12
+                        ],
+                        "rest_minutes": 1.5
+                    },
+                    "Pull-ups": {
+                        "reps": [
+                            6,
+                            8,
+                            10
+                        ],
+                        "rest_minutes": 1.5
+                    }
+                }
+            },
+            "Tuesday": {
+                "exercises": {
+                    "Overhead Press": {
+                        "reps": [
+                            8,
+                            10,
+                            12
+                        ],
+                        "rest_minutes": 1.5
+                    },
+                    "Deadlifts": {
+                        "reps": [
+                            6,
+                            8,
+                            10
+                        ],
+                        "rest_minutes": 2.0
+                    },
+                    "Dips": {
+                        "reps": [
+                            8,
+                            10,
+                            12
+                        ],
+                        "rest_minutes": 1.5
+                    }
+                }
+            },
+            "Wednesday": {
+                "exercises": {
+                    "Bicep Curls": {
+                        "reps": [
+                            10,
+                            12,
+                            12
+                        ],
+                        "rest_minutes": 1.0
+                    },
+                    "Tricep Extensions": {
+                        "reps": [
+                            10,
+                            12,
+                            12
+                        ],
+                        "rest_minutes": 1.0
+                    },
+                    "Leg Raises": {
+                        "reps": [
+                            12,
+                            15,
+                            15
+                        ],
+                        "rest_minutes": 1.0
+                    }
+                }
+            },
+            "Thursday": {
+                "exercises": {
+                    "Lunges": {
+                        "reps": [
+                            10,
+                            12,
+                            12
+                        ],
+                        "rest_minutes": 1.5
+                    },
+                    "Lat Pulldowns": {
+                        "reps": [
+                            10,
+                            12,
+                            12
+                        ],
+                        "rest_minutes": 1.5
+                    },
+                    "Shoulder Shrugs": {
+                        "reps": [
+                            12,
+                            15,
+                            15
+                        ],
+                        "rest_minutes": 1.5
+                    }
+                }
+            },
+            "Friday": {
+                "exercises": {
+                    "Push-ups": {
+                        "reps": [
+                            15,
+                            20,
+                            20
+                        ],
+                        "rest_minutes": 1.0
+                    },
+                    "Plank": {
+                        "reps": [
+                            30,
+                            45,
+                            60
+                        ],
+                        "rest_minutes": 1.0
+                    },
+                    "Burpees": {
+                        "reps": [
+                            10,
+                            12,
+                            12
+                        ],
+                        "rest_minutes": 1.5
+                    }
+                }
+            },
+            "Saturday": {
+                "exercises": {
+                    "Cardio (Running)": {
+                        "reps": [
+                            1,
+                            1,
+                            1
+                        ],
+                        "rest_minutes": 0.0
+                    },
+                    "Swimming": {
+                        "reps": [
+                            1,
+                            1,
+                            1
+                        ],
+                        "rest_minutes": 0.0
+                    }
+                }
+            },
+            "Sunday": {
+                "exercises": {}
+            }
+        }
+    }
+}

@@ -1,0 +1,14 @@
+# requirements.txt
+# Core chatbot frameworks
+langchain
+langchain-openai
+langgraph
+pydantic
+
+# Utility libraries for APIs and environment variables
+requests
+python-dotenv
+
+# Text-to-Speech (TTS) libraries
+gTTS
+pydub

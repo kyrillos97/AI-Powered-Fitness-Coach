@@ -1,0 +1,451 @@
+{
+    "diet_plan": {
+        "diet": {
+            "Monday": [
+                {
+                    "meal_time": "breakfast",
+                    "items": [
+                        "Oatmeal with banana and almonds",
+                        "Greek yogurt with honey",
+                        "Whole grain toast with peanut butter"
+                    ],
+                    "calories": 500
+                },
+                {
+                    "meal_time": "lunch",
+                    "items": [
+                        "Grilled chicken breast",
+                        "Quinoa",
+                        "Steamed broccoli",
+                        "Olive oil dressing"
+                    ],
+                    "calories": 600
+                },
+                {
+                    "meal_time": "dinner",
+                    "items": [
+                        "Baked salmon",
+                        "Brown rice",
+                        "Mixed vegetables (carrots, zucchini, bell peppers)",
+                        "Lemon butter sauce"
+                    ],
+                    "calories": 650
+                },
+                {
+                    "meal_time": "snack",
+                    "items": [
+                        "Protein shake with milk and a scoop of whey protein"
+                    ],
+                    "calories": 200
+                }
+            ],
+            "Tuesday": [
+                {
+                    "meal_time": "breakfast",
+                    "items": [
+                        "Scrambled eggs with spinach and feta cheese",
+                        "Whole grain toast",
+                        "Avocado slices"
+                    ],
+                    "calories": 550
+                },
+                {
+                    "meal_time": "lunch",
+                    "items": [
+                        "Turkey breast wrap with whole grain tortilla",
+                        "Hummus",
+                        "Mixed greens with cherry tomatoes and cucumber"
+                    ],
+                    "calories": 550
+                },
+                {
+                    "meal_time": "dinner",
+                    "items": [
+                        "Grilled lean beef",
+                        "Sweet potato",
+                        "Asparagus",
+                        "Olive oil and garlic"
+                    ],
+                    "calories": 650
+                },
+                {
+                    "meal_time": "snack",
+                    "items": [
+                        "Handful of almonds and a small apple"
+                    ],
+                    "calories": 200
+                }
+            ],
+            "Wednesday": [
+                {
+                    "meal_time": "breakfast",
+                    "items": [
+                        "Greek yogurt with granola and berries",
+                        "Hard-boiled eggs",
+                        "Whole grain toast"
+                    ],
+                    "calories": 500
+                },
+                {
+                    "meal_time": "lunch",
+                    "items": [
+                        "Grilled shrimp",
+                        "Brown rice",
+                        "Steamed green beans",
+                        "Lemon and olive oil dressing"
+                    ],
+                    "calories": 600
+                },
+                {
+                    "meal_time": "dinner",
+                    "items": [
+                        "Baked chicken thighs",
+                        "Quinoa",
+                        "Roasted Brussels sprouts",
+                        "Olive oil and balsamic vinegar"
+                    ],
+                    "calories": 650
+                },
+                {
+                    "meal_time": "snack",
+                    "items": [
+                        "Cottage cheese with pineapple chunks"
+                    ],
+                    "calories": 200
+                }
+            ],
+            "Thursday": [
+                {
+                    "meal_time": "breakfast",
+                    "items": [
+                        "Smoothie with banana, spinach, almond milk, and protein powder",
+                        "Whole grain toast with almond butter"
+                    ],
+                    "calories": 500
+                },
+                {
+                    "meal_time": "lunch",
+                    "items": [
+                        "Grilled chicken breast",
+                        "Whole grain pasta",
+                        "Marinara sauce",
+                        "Side salad with olive oil dressing"
+                    ],
+                    "calories": 600
+                },
+                {
+                    "meal_time": "dinner",
+                    "items": [
+                        "Baked cod",
+                        "Mashed potatoes",
+                        "Steamed carrots and peas",
+                        "Lemon and dill sauce"
+                    ],
+                    "calories": 650
+                },
+                {
+                    "meal_time": "snack",
+                    "items": [
+                        "Handful of walnuts and a small pear"
+                    ],
+                    "calories": 200
+                }
+            ],
+            "Friday": [
+                {
+                    "meal_time": "breakfast",
+                    "items": [
+                        "Oatmeal with berries and chia seeds",
+                        "Greek yogurt with honey",
+                        "Hard-boiled eggs"
+                    ],
+                    "calories": 500
+                },
+                {
+                    "meal_time": "lunch",
+                    "items": [
+                        "Grilled turkey breast",
+                        "Quinoa",
+                        "Steamed broccoli",
+                        "Olive oil dressing"
+                    ],
+                    "calories": 600
+                },
+                {
+                    "meal_time": "dinner",
+                    "items": [
+                        "Baked salmon",
+                        "Brown rice",
+                        "Mixed vegetables (carrots, zucchini, bell peppers)",
+                        "Lemon butter sauce"
+                    ],
+                    "calories": 650
+                },
+                {
+                    "meal_time": "snack",
+                    "items": [
+                        "Protein bar"
+                    ],
+                    "calories": 200
+                }
+            ],
+            "Saturday": [
+                {
+                    "meal_time": "breakfast",
+                    "items": [
+                        "Scrambled eggs with mushrooms and tomatoes",
+                        "Whole grain toast",
+                        "Avocado slices"
+                    ],
+                    "calories": 550
+                },
+                {
+                    "meal_time": "lunch",
+                    "items": [
+                        "Grilled chicken breast",
+                        "Sweet potato",
+                        "Steamed green beans",
+                        "Olive oil and garlic"
+                    ],
+                    "calories": 600
+                },
+                {
+                    "meal_time": "dinner",
+                    "items": [
+                        "Lean beef stir-fry with mixed vegetables",
+                        "Brown rice",
+                        "Soy sauce and sesame oil"
+                    ],
+                    "calories": 650
+                },
+                {
+                    "meal_time": "snack",
+                    "items": [
+                        "Handful of almonds and a small apple"
+                    ],
+                    "calories": 200
+                }
+            ],
+            "Sunday": [
+                {
+                    "meal_time": "breakfast",
+                    "items": [
+                        "Greek yogurt with granola and berries",
+                        "Hard-boiled eggs",
+                        "Whole grain toast"
+                    ],
+                    "calories": 500
+                },
+                {
+                    "meal_time": "lunch",
+                    "items": [
+                        "Grilled shrimp",
+                        "Quinoa",
+                        "Steamed green beans",
+                        "Lemon and olive oil dressing"
+                    ],
+                    "calories": 600
+                },
+                {
+                    "meal_time": "dinner",
+                    "items": [
+                        "Baked chicken thighs",
+                        "Brown rice",
+                        "Roasted Brussels sprouts",
+                        "Olive oil and balsamic vinegar"
+                    ],
+                    "calories": 650
+                },
+                {
+                    "meal_time": "snack",
+                    "items": [
+                        "Cottage cheese with pineapple chunks"
+                    ],
+                    "calories": 200
+                }
+            ]
+        }
+    },
+    "workout_plan": {
+        "workout": {
+            "Monday": {
+                "exercises": {
+                    "Bench Press": {
+                        "reps": [
+                            8,
+                            10,
+                            12
+                        ],
+                        "rest_minutes": 1.5
+                    },
+                    "Squats": {
+                        "reps": [
+                            10,
+                            12,
+                            12
+                        ],
+                        "rest_minutes": 1.5
+                    },
+                    "Pull-ups": {
+                        "reps": [
+                            6,
+                            8,
+                            10
+                        ],
+                        "rest_minutes": 1.5
+                    }
+                }
+            },
+            "Tuesday": {
+                "exercises": {
+                    "Overhead Press": {
+                        "reps": [
+                            8,
+                            10,
+                            12
+                        ],
+                        "rest_minutes": 1.5
+                    },
+                    "Deadlifts": {
+                        "reps": [
+                            6,
+                            8,
+                            10
+                        ],
+                        "rest_minutes": 2.0
+                    },
+                    "Bent-over Rows": {
+                        "reps": [
+                            10,
+                            12,
+                            12
+                        ],
+                        "rest_minutes": 1.5
+                    }
+                }
+            },
+            "Wednesday": {
+                "exercises": {
+                    "Dumbbell Curls": {
+                        "reps": [
+                            12,
+                            12,
+                            15
+                        ],
+                        "rest_minutes": 1.0
+                    },
+                    "Triceps Dips": {
+                        "reps": [
+                            10,
+                            12,
+                            12
+                        ],
+                        "rest_minutes": 1.0
+                    },
+                    "Plank": {
+                        "reps": [
+                            30,
+                            45,
+                            60
+                        ],
+                        "rest_minutes": 1.0
+                    }
+                }
+            },
+            "Thursday": {
+                "exercises": {
+                    "Leg Press": {
+                        "reps": [
+                            10,
+                            12,
+                            12
+                        ],
+                        "rest_minutes": 1.5
+                    },
+                    "Lat Pulldown": {
+                        "reps": [
+                            10,
+                            12,
+                            12
+                        ],
+                        "rest_minutes": 1.5
+                    },
+                    "Lunges": {
+                        "reps": [
+                            12,
+                            12,
+                            15
+                        ],
+                        "rest_minutes": 1.5
+                    }
+                }
+            },
+            "Friday": {
+                "exercises": {
+                    "Incline Bench Press": {
+                        "reps": [
+                            8,
+                            10,
+                            12
+                        ],
+                        "rest_minutes": 1.5
+                    },
+                    "Romanian Deadlifts": {
+                        "reps": [
+                            8,
+                            10,
+                            12
+                        ],
+                        "rest_minutes": 2.0
+                    },
+                    "Face Pulls": {
+                        "reps": [
+                            12,
+                            12,
+                            15
+                        ],
+                        "rest_minutes": 1.5
+                    }
+                }
+            },
+            "Saturday": {
+                "exercises": {
+                    "Bicep Curls": {
+                        "reps": [
+                            12,
+                            12,
+                            15
+                        ],
+                        "rest_minutes": 1.0
+                    },
+                    "Leg Raises": {
+                        "reps": [
+                            15,
+                            15,
+                            20
+                        ],
+                        "rest_minutes": 1.0
+                    },
+                    "Russian Twists": {
+                        "reps": [
+                            20,
+                            20,
+                            25
+                        ],
+                        "rest_minutes": 1.0
+                    }
+                }
+            },
+            "Sunday": {
+                "exercises": {
+                    "Rest": {
+                        "reps": [
+                            0
+                        ],
+                        "rest_minutes": 0.0
+                    }
+                }
+            }
+        }
+    }
+}

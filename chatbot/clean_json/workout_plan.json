@@ -1,0 +1,167 @@
+{
+    "workout": {
+        "Monday": {
+            "exercises": {
+                "Bench Press": {
+                    "reps": [
+                        8,
+                        10,
+                        12,
+                        1.5
+                    ]
+                },
+                "Squats": {
+                    "reps": [
+                        10,
+                        12,
+                        12,
+                        1.5
+                    ]
+                },
+                "Pull-ups": {
+                    "reps": [
+                        6,
+                        8,
+                        10,
+                        1.5
+                    ]
+                }
+            }
+        },
+        "Tuesday": {
+            "exercises": {
+                "Overhead Press": {
+                    "reps": [
+                        8,
+                        10,
+                        12,
+                        1.5
+                    ]
+                },
+                "Deadlifts": {
+                    "reps": [
+                        6,
+                        8,
+                        10,
+                        2.0
+                    ]
+                },
+                "Dips": {
+                    "reps": [
+                        8,
+                        10,
+                        12,
+                        1.5
+                    ]
+                }
+            }
+        },
+        "Wednesday": {
+            "exercises": {
+                "Bicep Curls": {
+                    "reps": [
+                        10,
+                        12,
+                        12,
+                        1.0
+                    ]
+                },
+                "Tricep Extensions": {
+                    "reps": [
+                        10,
+                        12,
+                        12,
+                        1.0
+                    ]
+                },
+                "Leg Raises": {
+                    "reps": [
+                        12,
+                        15,
+                        15,
+                        1.0
+                    ]
+                }
+            }
+        },
+        "Thursday": {
+            "exercises": {
+                "Lunges": {
+                    "reps": [
+                        10,
+                        12,
+                        12,
+                        1.5
+                    ]
+                },
+                "Lat Pulldowns": {
+                    "reps": [
+                        10,
+                        12,
+                        12,
+                        1.5
+                    ]
+                },
+                "Shoulder Shrugs": {
+                    "reps": [
+                        12,
+                        15,
+                        15,
+                        1.5
+                    ]
+                }
+            }
+        },
+        "Friday": {
+            "exercises": {
+                "Push-ups": {
+                    "reps": [
+                        15,
+                        20,
+                        20,
+                        1.0
+                    ]
+                },
+                "Plank": {
+                    "reps": [
+                        30,
+                        45,
+                        60,
+                        1.0
+                    ]
+                },
+                "Burpees": {
+                    "reps": [
+                        10,
+                        12,
+                        12,
+                        1.5
+                    ]
+                }
+            }
+        },
+        "Saturday": {
+            "exercises": {
+                "Cardio (Running)": {
+                    "reps": [
+                        1,
+                        1,
+                        1,
+                        0.0
+                    ]
+                },
+                "Swimming": {
+                    "reps": [
+                        1,
+                        1,
+                        1,
+                        0.0
+                    ]
+                }
+            }
+        },
+        "Sunday": {
+            "exercises": {}
+        }
+    }
+}

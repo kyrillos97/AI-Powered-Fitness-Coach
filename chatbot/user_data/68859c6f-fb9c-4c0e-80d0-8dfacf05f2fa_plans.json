@@ -1,0 +1,132 @@
+{
+    "diet_plan": {
+        "diet": [
+            {
+                "meal_time": "Breakfast",
+                "items": [
+                    "Oatmeal with skim milk",
+                    "1 sliced banana",
+                    "2 boiled eggs"
+                ],
+                "calories": 450
+            },
+            {
+                "meal_time": "Mid-Morning Snack",
+                "items": [
+                    "Greek yogurt",
+                    "Handful of almonds"
+                ],
+                "calories": 200
+            },
+            {
+                "meal_time": "Lunch",
+                "items": [
+                    "Grilled chicken breast",
+                    "Quinoa salad with mixed vegetables",
+                    "1 apple"
+                ],
+                "calories": 600
+            },
+            {
+                "meal_time": "Afternoon Snack",
+                "items": [
+                    "Protein shake",
+                    "Carrot sticks"
+                ],
+                "calories": 250
+            },
+            {
+                "meal_time": "Dinner",
+                "items": [
+                    "Baked salmon",
+                    "Steamed broccoli",
+                    "Sweet potato"
+                ],
+                "calories": 550
+            },
+            {
+                "meal_time": "Evening Snack",
+                "items": [
+                    "Cottage cheese",
+                    "A few slices of pineapple"
+                ],
+                "calories": 150
+            }
+        ]
+    },
+    "workout_plan": {
+        "workout": {
+            "Squats": {
+                "reps": [
+                    12,
+                    10,
+                    8,
+                    8
+                ],
+                "rest_minutes": 2.0
+            },
+            "Bench Press": {
+                "reps": [
+                    12,
+                    10,
+                    8,
+                    6
+                ],
+                "rest_minutes": 2.0
+            },
+            "Deadlifts": {
+                "reps": [
+                    10,
+                    8,
+                    6
+                ],
+                "rest_minutes": 3.0
+            },
+            "Pull-ups": {
+                "reps": [
+                    10,
+                    8,
+                    6,
+                    6
+                ],
+                "rest_minutes": 2.0
+            },
+            "Barbell Rows": {
+                "reps": [
+                    12,
+                    10,
+                    8,
+                    8
+                ],
+                "rest_minutes": 2.0
+            },
+            "Shoulder Press": {
+                "reps": [
+                    12,
+                    10,
+                    8,
+                    6
+                ],
+                "rest_minutes": 2.0
+            },
+            "Bicep Curls": {
+                "reps": [
+                    12,
+                    10,
+                    8,
+                    8
+                ],
+                "rest_minutes": 1.5
+            },
+            "Tricep Dips": {
+                "reps": [
+                    12,
+                    10,
+                    8,
+                    8
+                ],
+                "rest_minutes": 1.5
+            }
+        }
+    }
+}
