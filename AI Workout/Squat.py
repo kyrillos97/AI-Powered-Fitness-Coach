@@ -3,12 +3,9 @@ from ultralytics import YOLO
 import cv2
 import numpy as np
 from typing import Tuple
-from ultralytics import YOLO
-
 
 exercise_plan = {
-    "squat": (2,2,1,1), 
-          # مثال: مجموعة واحدة 10 عدات
+    "squat": (10, 3),  # Example: 3 sets of 10 reps (fixed from unrealistic 400)
 }
 
 class DefaultFeedback:
@@ -20,7 +17,7 @@ class Workout:
     def __init__(self, video_path=1, visual=True,
                  model_path="yolo11n-pose.pt", feedback_handler=None,
                  rest_between_sets=60, rest_between_exercises=120):
-        # video_path=0 → الكاميرا
+        # video_path=0 → default camera
         self.video_path = video_path
         self.visual = visual
         self.model = YOLO(model_path)
@@ -29,20 +26,36 @@ class Workout:
         self.rest_between_exercises = rest_between_exercises
         self.cap = None
 
-        # --- EDIT: person‑detection readiness controls ---
-        self.detection_confirmation_frames = 5   # number of consecutive frames required to confirm person presence
-        self._detected_frames = 0                # current consecutive detection count
-        self.person_confirmed = False            # True once person is confirmed (detected once at start)
-        # -------------------------------------------------
+        # Person detection readiness controls
+        self.detection_confirmation_frames = 5   # consecutive frames to confirm person
+        self._detected_frames = 0
+        self.person_confirmed = False
 
-        # ---- NEW : feet‑stability threshold (percentage of body height) ----
-        # We'll use a dynamic threshold based on body proportions
-        self.feet_stability_thresh_ratio = 0.15  # 15% of body height as max ankle height difference
-        # ------------------------------------------------
-        self.ref=0
-        self.ref_min=self.ref-10
-        self.ref_max=self.ref+10
-        
+        # Feet stability params
+        self.feet_stability_thresh_ratio_max = 0.75
+        self.feet_stability_thresh_ratio_min =  -0.02# 10% deviation allowed (fixed from 0.6)
+        self.unstable_confirmation_frames = 10   # Consecutive unstable frames to trigger (debounced)
+        self._unstable_frames = 0
+        self.baseline_ankle_dist = 0.0  # Baseline ankle distance (calibrated at start)
+        self.baseline_hip_dist = 0.0
+        self.baseline_ratio = 0.0
+
+        # Hip-knee y checker params
+        self.hip_knee_y_threshold_ratio = 0.4  # Max allowed y-diff ratio for valid squat (40% of standing leg height)
+        self.baseline_leg_height_left = 0.0
+        self.baseline_leg_height_right = 0.0
+
+        # Angle smoothing params
+        self.prev_angle_left = 180.0
+        self.prev_angle_right = 180.0
+        self.smoothing_factor = 0.8  # For jitter reduction
+
+        # Phase debouncing
+        self.squat_confirm_frames = 2  # Consecutive frames needed to enter squat phase
+        self.stand_confirm_frames = 2  # Consecutive frames needed to return to stand
+        self._squat_confirm_count = 0
+        self._stand_confirm_count = 0
+
     # -------------------- Landmarks --------------------
     def angle_between(self, a: np.ndarray, b: np.ndarray, c: np.ndarray) -> float:
         ba = a - b
@@ -56,21 +69,17 @@ class Workout:
     
     def _get_landmarks(self, results):
         lm = {}
-        # results can be empty or have no keypoints; guard accordingly
         if not results or len(results) == 0:
             return lm
-        # If the model returned keypoints, check confidences and positions
         try:
             res_conf = results[0].keypoints.conf.cpu().numpy()
         except Exception:
             return lm
 
         finalres = res_conf[0] if res_conf.shape[0] > 0 else []
-        # require the critical keypoints (11..16) to have sufficient confidence
         if len(finalres) != 0:
-            for i in range(11, 17):
-                # if any of those keypoints is low confidence → treat as "no reliable person"
-                if finalres[i] < 0.80:
+            for i in [11,12,13,14,15,16]:  # Critical keypoints
+                if finalres[i] < 0.7:  # Lowered threshold for better detection
                     return lm  
 
         kpts = results[0].keypoints.xy.cpu().numpy()
@@ -89,103 +98,114 @@ class Workout:
         c = np.array(lm[str(triplet[2])], dtype=float)
         return self.angle_between(a, b, c)
 
-    # -------------------- New: Dynamic Feet‑stability validation --------------------
-    def _validate_feet_stable(self, lm,ref) -> bool:
-        """
-        Returns True if both ankles are at a similar height (feet on the ground).
-        Uses dynamic threshold based on body proportions.
-        """
-        # ankle key‑points are 15 (left ankle) and 16 (right ankle) in YOLO‑pose
-        ref_min=ref-10
-        ref_max=ref+10
-        y_left_ankle = lm["15"][1]
-        y_right_ankle = lm["16"][1]
-        
-        if "15" not in lm or "16" not in lm :
-            # we cannot decide – assume stable so we don't block the workout
-            return False
-        
-        # Get ankle positions
-        if y_left_ankle >=ref_min and y_left_ankle <=ref_max  or y_right_ankle >=ref_min and y_right_ankle <=ref_max  :
-            return False
+    def _compute_dist(self, lm, pt1: int, pt2: int) -> float:
+        if str(pt1) not in lm or str(pt2) not in lm:
+            return 0.0
+        p1 = np.array(lm[str(pt1)], dtype=float)
+        p2 = np.array(lm[str(pt2)], dtype=float)
+        return np.linalg.norm(p1 - p2)
 
+    # -------------------- Feet stability validation --------------------
+    def _validate_feet_stable(self, lm, frame) -> bool:
+        """
+        Returns True if feet are stable: ankle distance within deviation of baseline.
+        """
+        required_keys = ["11", "12", "15", "16"]
+        if any(key not in lm for key in required_keys):
+            self._unstable_frames = 0
+            return True  # Assume stable if can't check
+
+        dist_ankles = self._compute_dist(lm, 15, 16)
+        dist_hips = self._compute_dist(lm, 11, 12)
+        if dist_hips == 0:
+            return True
         
+        # Calibrate baseline if not set (e.g., at startup)
+        if self.baseline_ratio == 0 and dist_ankles > 0:
+            self.baseline_ratio = dist_ankles / dist_hips
+            return True
         
-        # # Calculate approximate body height (from hips to ankles)
-        # # Use the average hip height and average ankle height
-        # avg_hip_height=(lm["11"][1]+lm["12"][1])/2
-        # avg_ankle_height = (y_left_ankle + y_right_ankle) / 2
-        
-        # # Estimate leg length (this gives us a dynamic scale)
-        # leg_length = abs(avg_hip_height - avg_ankle_height)
-        
-        # # If leg length is too small (person too far or detection issue), use default
-        # if leg_length < 50:  # minimum reasonable leg length in pixels
-        #     leg_length = 100  # fallback value
-        
-        # # Dynamic threshold: percentage of leg length
-        # dynamic_threshold = leg_length * self.feet_stability_thresh_ratio
-        
-        # # Check if ankle height difference exceeds dynamic threshold
-        # ankle_height_diff = abs(y_left_ankle - y_right_ankle)
-        
-        # if ankle_height_diff > dynamic_threshold:
-        #     self.feedback_handler.give_feedback(
-        #         "squat",
-        #         "Feet must stay stable on the ground – do not raise one leg."
-        #     )
-        #     return False
-        return True
-    # ---------------------------------------------------------------------
+        if self.baseline_ratio > 0:
+            current_ratio =   dist_hips/dist_ankles
+            deviation = (current_ratio - self.baseline_ratio) / self.baseline_ratio
+            deviation*=-1
+            is_stable = deviation >= self.feet_stability_thresh_ratio_min and deviation <= self.feet_stability_thresh_ratio_max
+        else:
+            is_stable = False  # Fallback
+        print("%"*50)
+        print(deviation)
+        print("%"*50)
+        print("#"*50)
+        print(dist_ankles)
+        print("#"*50)
+
+        # Visualize ankle line
+        if self.visual and "15" in lm and "16" in lm:
+            color = (0, 255, 0) if is_stable else (0, 0, 255)
+            cv2.line(frame, (int(lm["15"][0]), int(lm["15"][1])), (int(lm["16"][0]), int(lm["16"][1])), color, 2)
+
+        return is_stable
 
     # -------------------- Validation --------------------
-    def _validate_squat(self, angle: float,angle2:float) -> bool:
-        if 80 <= angle <= 110 and 80 <= angle2 <= 110:
-            return True
-        if angle > 110 and angle2 > 110:
+    def _validate_squat(self, angle: float, angle2: float, lm) -> bool:
+        # Check angles
+        min_angle = min(angle, angle2)
+        if min_angle > 135:
             self.feedback_handler.give_feedback("squat", "Bend your knees more")
             return False
-        if angle < 80 and angle2 < 80:
-            self.feedback_handler.give_feedback("squat", "Raise your knees more")
+        if min_angle < 75:
+            self.feedback_handler.give_feedback("squat", "Don't squat too deep")
             return False
-        return False  # explicit fallback
+
+        # Additional hip-knee y checker for valid squat depth
+        required_keys = ["11", "12", "13", "14"]
+        if any(key not in lm for key in required_keys):
+            return False  # Can't check, invalid
+
+        # Compute current y-diffs (assuming y increases downward)
+        current_diff_left = lm["13"][1] - lm["11"][1]  # knee_y - hip_y
+        current_diff_right = lm["14"][1] - lm["12"][1]
+
+        # Check if within allowed range (not exactly same, with error tolerance)
+        if self.baseline_leg_height_left > 0 and self.baseline_leg_height_right > 0:
+            is_valid_left = current_diff_left <= self.baseline_leg_height_left * self.hip_knee_y_threshold_ratio
+            is_valid_right = current_diff_right <= self.baseline_leg_height_right * self.hip_knee_y_threshold_ratio
+            if not (is_valid_left and is_valid_right):
+                self.feedback_handler.give_feedback("squat", "Lower your hips more to align with knees")
+                return False
+        else:
+            return False  # No baseline, invalid
+
+        # If angles in range and y-check passes
+        if 75 <= min_angle <= 135:  # Widened range for tolerance
+            return True
+        return False
 
     # -------------------- Rest Period --------------------
-    
-    def rest_period(self, duration,numset,tarset, is_exercise_rest=False):
+    def rest_period(self, duration, numset=None, tarset=None, is_exercise_rest=False):
         label = "exercise" if is_exercise_rest else "set"
-
-        end_time = time.time() + duration  # when the rest should end
+        end_time = time.time() + duration
         while time.time() < end_time:
-            remaining = int(end_time - time.time()) + 1  # seconds left
-
-            # Try to get a frame from the camera
+            remaining = int(end_time - time.time()) + 1
             ret, frame = self.cap.read()
             if not ret:
-                frame = np.zeros((480, 640, 3), dtype=np.uint8)  # black fallback
-
+                frame = np.zeros((480, 640, 3), dtype=np.uint8)
             txt = f"Rest between {label}s: {remaining} sec"
-            cv2.putText(frame, txt, (50, 200), cv2.FONT_HERSHEY_SIMPLEX,
-                        1.0, (0, 0, 255), 3)
-            if label !="exercise":
-              txt = f"Squat | Set {numset}/{tarset} and the remaining set : {tarset-numset}"
-              cv2.putText(frame, txt, (10, 60), cv2.FONT_HERSHEY_SIMPLEX,
-                                  0.8, (0, 255, 0), 2)
-
+            cv2.putText(frame, txt, (50, 200), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 0, 255), 3)
+            if not is_exercise_rest and numset is not None and tarset is not None:
+                txt = f"Squat | Set {numset}/{tarset}, remaining sets: {tarset - numset}"
+                cv2.putText(frame, txt, (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
             cv2.imshow("Workout (Press Q to quit)", frame)
-
-            # Wait only ~30 ms, so the loop is ~33 fps; no big block
             if cv2.waitKey(30) & 0xFF == ord('q'):
                 break
 
     # -------------------- Training Loop --------------------
     def train(self):
-        ref=0
         self.cap = cv2.VideoCapture(self.video_path)
         if not self.cap.isOpened():
             raise RuntimeError("Camera not opened")
 
-        # ---------------- EDIT: single-time person detection at startup ----------------
+        # Person detection and baseline calibration
         print("Looking for person... please stand in front of the camera.")
         while not self.person_confirmed:
             ret, frame = self.cap.read()
@@ -203,17 +223,22 @@ class Workout:
             if self._detected_frames >= self.detection_confirmation_frames:
                 self.person_confirmed = True
                 print("Person detected reliably — starting workout.")
-                # small visual confirmation frame for user
+                # Calibrate baseline ankle dist
+                self.baseline_ankle_dist = self._compute_dist(lm, 15, 16)
+                self.baseline_hip_dist = self._compute_dist(lm, 11, 12)
+                if self.baseline_hip_dist > 0:
+                    self.baseline_ratio = self.baseline_ankle_dist / self.baseline_hip_dist
+                # Calibrate baseline leg heights (y-diffs in standing)
+                if "11" in lm and "13" in lm:
+                    self.baseline_leg_height_left = lm["13"][1] - lm["11"][1]
+                if "12" in lm and "14" in lm:
+                    self.baseline_leg_height_right = lm["14"][1] - lm["12"][1]
                 cv2.putText(frame, "Person confirmed. Starting...", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0,255,0), 2)
-                r1=lm["15"][1]
-                r2=lm["16"][1]
-                ref=min(r2,r1)
                 if self.visual:
                     cv2.imshow("Workout (Press Q to quit)", frame)
                     cv2.waitKey(500)
                 break
 
-            # show waiting overlay
             cv2.putText(frame, f"Waiting for person... ({self._detected_frames}/{self.detection_confirmation_frames})", (10, 30),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
             if self.visual:
@@ -223,21 +248,18 @@ class Workout:
                     self.cap.release()
                     cv2.destroyAllWindows()
                     return
-        # -------------------------------------------------------------------------------
 
-        # Main exercise loop — now assume person_confirmed stays True for the whole session
+        # Main exercise loop
         phase = "stand"
         for ex_idx, (exercise_name, rep_groups) in enumerate(exercise_plan.items()):
             print(f"Starting {exercise_name}...")
+            total_sets = len(rep_groups)
             for group_idx, target_reps in enumerate(rep_groups):
-                if group_idx ==len(rep_groups)-1:
-                    break
                 rep_count = 0
                 print(f"Set {group_idx + 1}: {target_reps} reps")
 
                 while rep_count < target_reps:
                     ret, frame = self.cap.read()
-
                     if not ret:
                         print("Camera disconnected")
                         break
@@ -250,55 +272,67 @@ class Workout:
 
                     lm = self._get_landmarks(results)
 
-                    # --------‑‑‑‑‑‑‑‑‑‑‑‑‑‑‑‑‑‑‑‑‑‑‑‑‑‑‑‑‑‑‑‑‑‑‑‑‑‑‑‑‑‑‑‑‑‑‑‑‑‑‑‑‑-
-                    # NEW: Dynamic feet stability check
-                    if lm and  self._validate_feet_stable(lm,ref):
-                        # Visual cue (optional)
-                        cv2.putText(frame, "Feet not stable!", (10, 150),
-                                    cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0,0,255), 2)
-                        if self.visual:
-                            cv2.imshow("Workout (Press Q to quit)", frame)
-                            if cv2.waitKey(1) & 0xFF == ord('q'):
-                                rep_count = target_reps
-                                break
-                        # go to the next frame without changing phase / rep count
-                        continue
-                    # ----------------------------------------------------------------
+                    # Feet stability with debouncing
+                    is_stable = self._validate_feet_stable(lm, frame)
+                    if lm and not is_stable:
+                        self._unstable_frames += 1
+                        if self._unstable_frames >= self.unstable_confirmation_frames:
+                            self.feedback_handler.give_feedback("squat", "Feet must stay stable – do not move them.")
+                            cv2.putText(frame, "Feet not stable!", (10, 150), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0,0,255), 2)
+                            if self.visual:
+                                cv2.imshow("Workout (Press Q to quit)", frame)
+                                if cv2.waitKey(1) & 0xFF == ord('q'):
+                                    rep_count = target_reps
+                                    break
+                            continue  # Skip if confirmed unstable
+                    else:
+                        self._unstable_frames = 0
 
                     angle = 0.0
                     angle2 = 0.0
-                    # Since we confirmed person once at start, proceed to compute angles regardless
                     if lm:
-                        angle = self._compute_angle_for_triplet(lm, (11, 13, 15))
-                        angle2 = self._compute_angle_for_triplet(lm, (12, 14, 16))
+                        new_angle = self._compute_angle_for_triplet(lm, (11, 13, 15))
+                        new_angle2 = self._compute_angle_for_triplet(lm, (12, 14, 16))
+                        # Smooth angles
+                        angle = self.smoothing_factor * self.prev_angle_left + (1 - self.smoothing_factor) * new_angle
+                        angle2 = self.smoothing_factor * self.prev_angle_right + (1 - self.smoothing_factor) * new_angle2
+                        self.prev_angle_left = angle
+                        self.prev_angle_right = angle2
 
                     if phase == "stand":
-                        if self._validate_squat(angle,angle2):
-                            phase = "squat"
+                        if self._validate_squat(angle, angle2, lm):
+                            self._squat_confirm_count += 1
+                            if self._squat_confirm_count >= self.squat_confirm_frames:
+                                phase = "squat"
+                                self._squat_confirm_count = 0
+                        else:
+                            self._squat_confirm_count = 0
                     elif phase == "squat":
-                        if angle > 150 and angle2 > 150:
-                            rep_count += 1
-                            print(f"Rep {rep_count}/{target_reps}")
-                            phase = "stand"
+                        if min(angle, angle2) > 135:  # Softened stand threshold
+                            self._stand_confirm_count += 1
+                            if self._stand_confirm_count >= self.stand_confirm_frames:
+                                rep_count += 1
+                                print(f"Rep {rep_count}/{target_reps}")
+                                phase = "stand"
+                                self._stand_confirm_count = 0
+                                # Optional: Update baseline if needed, but avoid to prevent drift
+                        else:
+                            self._stand_confirm_count = 0
 
                     txt = f"Squat | Rep {rep_count}/{target_reps}"
-                    cv2.putText(frame, txt, (10, 60), cv2.FONT_HERSHEY_SIMPLEX,
-                                0.8, (0, 255, 0), 2)
-                    cv2.putText(frame, f"Knee Angle: {angle:.1f}", (10, 90),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
+                    cv2.putText(frame, txt, (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
+                    cv2.putText(frame, f"Knee Angles: {angle:.1f}, {angle2:.1f}", (10, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
                     ready_txt = "CONFIRMED" if self.person_confirmed else "NOT CONFIRMED"
-                    cv2.putText(frame, f"Person: {ready_txt}", (10, 120),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.6, (200, 200, 200), 1)
+                    cv2.putText(frame, f"Person: {ready_txt}", (10, 120), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (200, 200, 200), 1)
 
                     if self.visual:
                         cv2.imshow("Workout (Press Q to quit)", frame)
                         if cv2.waitKey(1) & 0xFF == ord('q'):
                             rep_count = target_reps
                             break
-                l=len(rep_groups)
-                if group_idx < l - 1:
-                    self.rest_period(self.rest_between_sets,group_idx+1,l - 1, is_exercise_rest=False)
-                    
+
+                if group_idx < total_sets - 1:
+                    self.rest_period(self.rest_between_sets, group_idx + 1, total_sets - 1, is_exercise_rest=False)
 
             if ex_idx < len(exercise_plan) - 1:
                 self.rest_period(self.rest_between_exercises, is_exercise_rest=True)
@@ -309,10 +343,7 @@ class Workout:
 
 # -------------------- Example --------------------
 if __name__ == "__main__":
-    w = Workout(video_path=1,  # 0 معناها افتح الكاميرا الافتراضية
+    w = Workout(video_path=1,  # 0 for default camera
                 visual=True,
                 model_path="yolo11n-pose.pt")
     w.train()
-# handel that the preiod of the detected state of feet stability 
-# handel take the refrance for each transation when standind
-# handel the camera angles to detect tthe train from multi prespective
