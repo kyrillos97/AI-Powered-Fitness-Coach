@@ -33,7 +33,7 @@ class Workout:
 
         # Feet stability params
         self.feet_stability_thresh_ratio_max = 0.75
-        self.feet_stability_thresh_ratio_min =  -0.02# 10% deviation allowed (fixed from 0.6)
+        self.feet_stability_thresh_ratio_min =  -0.02 # 10% deviation allowed (fixed from 0.6)
         self.unstable_confirmation_frames = 10   # Consecutive unstable frames to trigger (debounced)
         self._unstable_frames = 0
         self.baseline_ankle_dist = 0.0  # Baseline ankle distance (calibrated at start)
@@ -120,18 +120,14 @@ class Workout:
         if dist_hips == 0:
             return True
         
-        # Calibrate baseline if not set (e.g., at startup)
-        if self.baseline_ratio == 0 and dist_ankles > 0:
-            self.baseline_ratio = dist_ankles / dist_hips
-            return True
+        b1 = 1
         
-        if self.baseline_ratio > 0:
-            current_ratio =   dist_hips/dist_ankles
-            deviation = (current_ratio - self.baseline_ratio) / self.baseline_ratio
-            deviation*=-1
-            is_stable = deviation >= self.feet_stability_thresh_ratio_min and deviation <= self.feet_stability_thresh_ratio_max
-        else:
-            is_stable = False  # Fallback
+        # Calibrate baseline if not set (e.g., at startup)
+        deviation = dist_ankles / dist_hips
+        if deviation > 2.3 or deviation < 0.8:
+            b1 = 0
+
+       
         print("%"*50)
         print(deviation)
         print("%"*50)
@@ -141,10 +137,10 @@ class Workout:
 
         # Visualize ankle line
         if self.visual and "15" in lm and "16" in lm:
-            color = (0, 255, 0) if is_stable else (0, 0, 255)
+            color = (0, 255, 0) if b1 else (0, 0, 255)
             cv2.line(frame, (int(lm["15"][0]), int(lm["15"][1])), (int(lm["16"][0]), int(lm["16"][1])), color, 2)
 
-        return is_stable
+        return b1
 
     # -------------------- Validation --------------------
     def _validate_squat(self, angle: float, angle2: float, lm) -> bool:
