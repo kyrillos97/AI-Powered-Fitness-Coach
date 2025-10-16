@@ -143,20 +143,61 @@ class Workout:
         return b1
 
     # -------------------- Validation --------------------
-    def _validate_squat(self, angle: float, angle2: float, lm) -> bool:
+    def _validate_squat(self, angle: float, angle2: float, lm, frame) -> bool:
+        back_b = 1
+        hip_b = 1
+        knee_b = 1
+        # Back angle validation with visualization
+        required_back_keys = ["5", "6", "11", "13"]  # Left shoulder, right shoulder, left hip, left knee
+        back_angle = 0.0
+        is_back_valid = False
+        if all(key in lm for key in required_back_keys):
+            # Compute midpoint of shoulders (5 and 6)
+            shoulder_mid = (
+                (lm["5"][0] + lm["6"][0]) / 2,
+                (lm["5"][1] + lm["6"][1]) / 2
+            )
+            # Compute angle between shoulder midpoint, hip, and knee
+            shoulder_mid_np = np.array(shoulder_mid, dtype=float)
+            hip_np = np.array(lm["11"], dtype=float)
+            knee_np = np.array(lm["13"], dtype=float)
+            back_angle = self.angle_between(shoulder_mid_np, hip_np, knee_np)
+            is_back_valid = 40 <= back_angle <= 70
+
+            # Visualize back angle
+            if self.visual:
+                # Draw lines: shoulder midpoint to hip, hip to knee
+                color = (0, 255, 0) if is_back_valid else (0, 0, 255)
+                cv2.line(frame, (int(shoulder_mid[0]), int(shoulder_mid[1])), (int(lm["11"][0]), int(lm["11"][1])), color, 2)
+                cv2.line(frame, (int(lm["11"][0]), int(lm["11"][1])), (int(lm["13"][0]), int(lm["13"][1])), color, 2)
+                # Draw angle text near hip
+                angle_text = f"Back Angle: {back_angle:.1f}° {'(Valid)' if is_back_valid else '(Invalid)'}"
+                cv2.putText(frame, angle_text, (int(lm["11"][0]) + 10, int(lm["11"][1]) - 10), 
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
+
+            if not is_back_valid:
+                self.feedback_handler.give_feedback("squat", "Adjust your back angle to stay between 30 and 60 degrees")
+                back_b = 0
+        else:
+            self.feedback_handler.give_feedback("squat", "Cannot detect back angle due to missing keypoints")
+            if self.visual:
+                cv2.putText(frame, "Back Angle: Not Detected", (10, 180), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+            back_b = 0
+        
         # Check angles
         min_angle = min(angle, angle2)
         if min_angle > 135:
             self.feedback_handler.give_feedback("squat", "Bend your knees more")
-            return False
+            knee_b = 0
         if min_angle < 75:
             self.feedback_handler.give_feedback("squat", "Don't squat too deep")
-            return False
+            knee_b = 0
 
         # Additional hip-knee y checker for valid squat depth
         required_keys = ["11", "12", "13", "14"]
         if any(key not in lm for key in required_keys):
-            return False  # Can't check, invalid
+            hip_b = 0  # Can't check, invalid
+            return knee_b and hip_b and back_b  # Return early to avoid KeyError
 
         # Compute current y-diffs (assuming y increases downward)
         current_diff_left = lm["13"][1] - lm["11"][1]  # knee_y - hip_y
@@ -168,14 +209,14 @@ class Workout:
             is_valid_right = current_diff_right <= self.baseline_leg_height_right * self.hip_knee_y_threshold_ratio
             if not (is_valid_left and is_valid_right):
                 self.feedback_handler.give_feedback("squat", "Lower your hips more to align with knees")
-                return False
+                hip_b = 0
         else:
-            return False  # No baseline, invalid
+            hip_b = 0  # No baseline, invalid
 
         # If angles in range and y-check passes
         if 75 <= min_angle <= 135:  # Widened range for tolerance
-            return True
-        return False
+            knee_b = 1
+        return knee_b and hip_b and back_b
 
     # -------------------- Rest Period --------------------
     def rest_period(self, duration, numset=None, tarset=None, is_exercise_rest=False):
@@ -296,7 +337,7 @@ class Workout:
                         self.prev_angle_right = angle2
 
                     if phase == "stand":
-                        if self._validate_squat(angle, angle2, lm):
+                        if self._validate_squat(angle, angle2, lm, frame):
                             self._squat_confirm_count += 1
                             if self._squat_confirm_count >= self.squat_confirm_frames:
                                 phase = "squat"
