@@ -42,7 +42,7 @@ class Workout:
         # Angle error ranges (in degrees)
         self.elbow_angle_range = (35, 55)  # 45 ± 10
         self.hand_shoulder_hip_range = (90, 180)  # > 90
-        self.chest_to_ground_range = (0, 10)  # ≤ 10 degrees
+        self.chest_to_ground_range = (0,40) # ≤ 10 degrees
 
     # -------------------- Geometry Utilities --------------------
     def angle_between(self, a: np.ndarray, b: np.ndarray, c: np.ndarray) -> float:
@@ -278,16 +278,16 @@ class Workout:
         
         # Calculate angles for both sides
         angle_l = self.angle_between(ankle_l, shoulder_l, wrist_l)
-        angle_r = self.angle_between(ankle_r, shoulder_r, wrist_r)
-        avg_angle = (angle_l + angle_r) / 2
+       #angle_r = self.angle_between(ankle_r, shoulder_r, wrist_r)
+       #avg_angle = (angle_l + angle_r) / 2
         
         min_angle, max_angle = self.chest_to_ground_range
         
-        if avg_angle > max_angle:
+        if angle_l> max_angle:
             self.feedback_handler.give_feedback("push_up", "Go deeper - chest closer to ground")
-            return avg_angle, False, "Not deep enough"
+            return angle_l, False, "Not deep enough"
         
-        return avg_angle, True, "Valid"
+        return angle_l, True, "Valid"
 
     # -------------------- Drawing Utilities --------------------
     def _draw_line(self, frame: np.ndarray, p1: np.ndarray, p2: np.ndarray, 
@@ -305,14 +305,36 @@ class Workout:
 
     def _draw_angle_at_point(self, frame: np.ndarray, point: np.ndarray, angle: float, 
                             label: str, color: Tuple[int, int, int]):
-        """Draw angle value at a specific point"""
+        """Draw angle value at a specific point with clear visualization"""
         if point is None:
             return
         pt = tuple(map(int, point))
         text = f"{label}: {angle:.1f}°"
-        cv2.putText(frame, text, (pt[0] + 10, pt[1] - 10),
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
-        cv2.circle(frame, pt, 8, color, 2)
+        
+        # Draw circle at joint
+        cv2.circle(frame, pt, 10, color, 3)
+        cv2.circle(frame, pt, 6, (255, 255, 255), 2)
+        
+        # Draw angle text with background for clarity
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        font_scale = 0.7
+        thickness = 2
+        text_size = cv2.getTextSize(text, font, font_scale, thickness)[0]
+        
+        # Position text near the joint
+        text_x = pt[0] + 15
+        text_y = pt[1] - 15
+        
+        # Draw background rectangle for text
+        padding = 5
+        cv2.rectangle(frame, 
+                     (text_x - padding, text_y - text_size[1] - padding),
+                     (text_x + text_size[0] + padding, text_y + padding),
+                     color, -1)
+        
+        # Draw text
+        cv2.putText(frame, text, (text_x, text_y),
+                   font, font_scale, (255, 255, 255), thickness)
     
     def _print_all_angles(self, lm: Dict):
         """Print all presented angles to terminal"""
@@ -406,64 +428,83 @@ class Workout:
             self._draw_line(frame, hip_mid, knee_mid, (0, 255, 0), 2)
             self._draw_line(frame, knee_mid, ankle_mid, (0, 255, 0), 2, "Back Line")
         
-        # 3. Draw all critical angles
+        # 3. Draw all critical angles with clear organization
         if lm:
-            # LEFT SIDE ANGLES
-            elbow_l = self._get_point(lm, 7)
-            wrist_l = self._get_point(lm, 9)
             shoulder_l = self._get_point(lm, 5)
+            shoulder_r = self._get_point(lm, 6)
+            elbow_l = self._get_point(lm, 7)
+            elbow_r = self._get_point(lm, 8)
+            wrist_l = self._get_point(lm, 9)
+            wrist_r = self._get_point(lm, 10)
             hip_l = self._get_point(lm, 11)
+            hip_r = self._get_point(lm, 12)
             ankle_l = self._get_point(lm, 15)
+            ankle_r = self._get_point(lm, 16)
             
+            # ========== LEFT SIDE ANGLES (Blue tones) ==========
             # LEFT ELBOW ANGLE (shoulder-elbow-wrist)
             if all(p is not None for p in [shoulder_l, elbow_l, wrist_l]):
                 angle = self.angle_between(shoulder_l, elbow_l, wrist_l)
                 self._draw_angle_at_point(frame, elbow_l, angle, "L-Elbow", (255, 0, 0))
-                # Draw lines forming the angle
-                cv2.line(frame, tuple(map(int, shoulder_l)), tuple(map(int, elbow_l)), (255, 0, 0), 1)
-                cv2.line(frame, tuple(map(int, elbow_l)), tuple(map(int, wrist_l)), (255, 0, 0), 1)
+                cv2.line(frame, tuple(map(int, shoulder_l)), tuple(map(int, elbow_l)), (255, 100, 100), 2)
+                cv2.line(frame, tuple(map(int, elbow_l)), tuple(map(int, wrist_l)), (255, 100, 100), 2)
             
             # LEFT SHOULDER ANGLE (wrist-shoulder-hip)
             if all(p is not None for p in [wrist_l, shoulder_l, hip_l]):
                 angle = self.angle_between(wrist_l, shoulder_l, hip_l)
-                self._draw_angle_at_point(frame, shoulder_l, angle, "L-Shoulder", (255, 100, 0))
-                cv2.line(frame, tuple(map(int, wrist_l)), tuple(map(int, shoulder_l)), (255, 100, 0), 1)
-                cv2.line(frame, tuple(map(int, shoulder_l)), tuple(map(int, hip_l)), (255, 100, 0), 1)
+                self._draw_angle_at_point(frame, shoulder_l, angle, "L-Shoulder", (255, 165, 0))
+                cv2.line(frame, tuple(map(int, wrist_l)), tuple(map(int, shoulder_l)), (255, 200, 150), 2)
+                cv2.line(frame, tuple(map(int, shoulder_l)), tuple(map(int, hip_l)), (255, 200, 150), 2)
             
             # LEFT CHEST ANGLE (ankle-shoulder-wrist)
             if all(p is not None for p in [ankle_l, shoulder_l, wrist_l]):
                 angle = self.angle_between(ankle_l, shoulder_l, wrist_l)
                 self._draw_angle_at_point(frame, shoulder_l, angle, "L-Chest", (255, 255, 0))
-                cv2.line(frame, tuple(map(int, ankle_l)), tuple(map(int, shoulder_l)), (255, 255, 0), 1)
-                cv2.line(frame, tuple(map(int, shoulder_l)), tuple(map(int, wrist_l)), (255, 255, 0), 1)
+                cv2.line(frame, tuple(map(int, ankle_l)), tuple(map(int, shoulder_l)), (200, 200, 100), 2)
+                cv2.line(frame, tuple(map(int, shoulder_l)), tuple(map(int, wrist_l)), (200, 200, 100), 2)
             
-            # RIGHT SIDE ANGLES
-            elbow_r = self._get_point(lm, 8)
-            wrist_r = self._get_point(lm, 10)
-            shoulder_r = self._get_point(lm, 6)
-            hip_r = self._get_point(lm, 12)
-            ankle_r = self._get_point(lm, 16)
-            
+            # ========== RIGHT SIDE ANGLES (Red/Cyan tones) ==========
             # RIGHT ELBOW ANGLE (shoulder-elbow-wrist)
             if all(p is not None for p in [shoulder_r, elbow_r, wrist_r]):
                 angle = self.angle_between(shoulder_r, elbow_r, wrist_r)
                 self._draw_angle_at_point(frame, elbow_r, angle, "R-Elbow", (0, 0, 255))
-                cv2.line(frame, tuple(map(int, shoulder_r)), tuple(map(int, elbow_r)), (0, 0, 255), 1)
-                cv2.line(frame, tuple(map(int, elbow_r)), tuple(map(int, wrist_r)), (0, 0, 255), 1)
+                cv2.line(frame, tuple(map(int, shoulder_r)), tuple(map(int, elbow_r)), (100, 100, 255), 2)
+                cv2.line(frame, tuple(map(int, elbow_r)), tuple(map(int, wrist_r)), (100, 100, 255), 2)
             
             # RIGHT SHOULDER ANGLE (wrist-shoulder-hip)
             if all(p is not None for p in [wrist_r, shoulder_r, hip_r]):
                 angle = self.angle_between(wrist_r, shoulder_r, hip_r)
-                self._draw_angle_at_point(frame, shoulder_r, angle, "R-Shoulder", (100, 100, 255))
-                cv2.line(frame, tuple(map(int, wrist_r)), tuple(map(int, shoulder_r)), (100, 100, 255), 1)
-                cv2.line(frame, tuple(map(int, shoulder_r)), tuple(map(int, hip_r)), (100, 100, 255), 1)
+                self._draw_angle_at_point(frame, shoulder_r, angle, "R-Shoulder", (0, 165, 255))
+                cv2.line(frame, tuple(map(int, wrist_r)), tuple(map(int, shoulder_r)), (150, 200, 255), 2)
+                cv2.line(frame, tuple(map(int, shoulder_r)), tuple(map(int, hip_r)), (150, 200, 255), 2)
             
             # RIGHT CHEST ANGLE (ankle-shoulder-wrist)
             if all(p is not None for p in [ankle_r, shoulder_r, wrist_r]):
                 angle = self.angle_between(ankle_r, shoulder_r, wrist_r)
                 self._draw_angle_at_point(frame, shoulder_r, angle, "R-Chest", (0, 255, 255))
-                cv2.line(frame, tuple(map(int, ankle_r)), tuple(map(int, shoulder_r)), (0, 255, 255), 1)
-                cv2.line(frame, tuple(map(int, shoulder_r)), tuple(map(int, wrist_r)), (0, 255, 255), 1)
+                cv2.line(frame, tuple(map(int, ankle_r)), tuple(map(int, shoulder_r)), (100, 200, 200), 2)
+                cv2.line(frame, tuple(map(int, shoulder_r)), tuple(map(int, wrist_r)), (100, 200, 200), 2)
+            
+            # ========== JOINT MARKERS ==========
+            # Draw all joint positions with circles
+            joints = [
+                (shoulder_l, "SL", (100, 100, 255)),
+                (shoulder_r, "SR", (100, 100, 255)),
+                (elbow_l, "EL", (255, 100, 100)),
+                (elbow_r, "ER", (255, 100, 100)),
+                (wrist_l, "WL", (100, 255, 100)),
+                (wrist_r, "WR", (100, 255, 100)),
+                (hip_l, "HL", (100, 255, 255)),
+                (hip_r, "HR", (100, 255, 255)),
+                (ankle_l, "AL", (255, 100, 255)),
+                (ankle_r, "AR", (255, 100, 255)),
+            ]
+            
+            for joint, label, color in joints:
+                if joint is not None:
+                    pt = tuple(map(int, joint))
+                    cv2.circle(frame, pt, 6, color, -1)
+                    cv2.circle(frame, pt, 8, (255, 255, 255), 2)
 
     # -------------------- Rep Validation --------------------
     def _validate_push_up_rep(self, lm: Dict) -> Tuple[bool, Dict]:
