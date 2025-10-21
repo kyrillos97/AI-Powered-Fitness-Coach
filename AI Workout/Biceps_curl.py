@@ -5,7 +5,7 @@ from typing import Tuple, Dict, List
 from ultralytics import YOLO
 
 exercise_plan = {
-    "biceps_curl": (15, 3, 1, 1),
+    "biceps_curl": (20, 20, 20, 1),
 }
 
 # YOLO Pose Keypoints (17 keypoints)
@@ -42,6 +42,11 @@ class Workout:
         # Biceps curl angle ranges
         self.biceps_curl_angle_range = (40, 80)  # elbow flexion range
         self.biceps_extended_angle_range = (160, 180)  # full extension
+        
+        # Alternating arm tracking
+        self.active_arm = None  # 'left' or 'right'
+        self.last_counted_arm = None  # Track which arm was last counted
+        self.shoulder_reference_y = None  # Reference Y position of shoulders
 
     # -------------------- Geometry Utilities --------------------
     def angle_between(self, a: np.ndarray, b: np.ndarray, c: np.ndarray) -> float:
@@ -229,18 +234,19 @@ class Workout:
             self._draw_line(frame, shoulder_mid, hip_mid, (0, 255, 0), 3)
             self._draw_line(frame, hip_mid, ankle_mid, (0, 255, 0), 3, "Posture")
         
-        # 2. Draw elbow angles
-        if all(p is not None for p in [shoulder_l, elbow_l, wrist_l]):
-            angle_l = self.angle_between(wrist_l, elbow_l, shoulder_l)
-            self._draw_angle_at_point(frame, elbow_l, angle_l, "L-Curl", (255, 0, 0))
-            cv2.line(frame, tuple(map(int, wrist_l)), tuple(map(int, elbow_l)), (255, 100, 100), 3)
-            cv2.line(frame, tuple(map(int, elbow_l)), tuple(map(int, shoulder_l)), (255, 100, 100), 3)
-        
-        if all(p is not None for p in [shoulder_r, elbow_r, wrist_r]):
-            angle_r = self.angle_between(wrist_r, elbow_r, shoulder_r)
-            self._draw_angle_at_point(frame, elbow_r, angle_r, "R-Curl", (0, 0, 255))
-            cv2.line(frame, tuple(map(int, wrist_r)), tuple(map(int, elbow_r)), (100, 100, 255), 3)
-            cv2.line(frame, tuple(map(int, elbow_r)), tuple(map(int, shoulder_r)), (100, 100, 255), 3)
+        # 2. Draw elbow angles - only for active arm
+        if self.active_arm == 'left':
+            if all(p is not None for p in [shoulder_l, elbow_l, wrist_l]):
+                angle_l = self.angle_between(wrist_l, elbow_l, shoulder_l)
+                self._draw_angle_at_point(frame, elbow_l, angle_l, "L-Curl", (255, 0, 0))
+                cv2.line(frame, tuple(map(int, wrist_l)), tuple(map(int, elbow_l)), (255, 100, 100), 3)
+                cv2.line(frame, tuple(map(int, elbow_l)), tuple(map(int, shoulder_l)), (255, 100, 100), 3)
+        elif self.active_arm == 'right':
+            if all(p is not None for p in [shoulder_r, elbow_r, wrist_r]):
+                angle_r = self.angle_between(wrist_r, elbow_r, shoulder_r)
+                self._draw_angle_at_point(frame, elbow_r, angle_r, "R-Curl", (0, 0, 255))
+                cv2.line(frame, tuple(map(int, wrist_r)), tuple(map(int, elbow_r)), (100, 100, 255), 3)
+                cv2.line(frame, tuple(map(int, elbow_r)), tuple(map(int, shoulder_r)), (100, 100, 255), 3)
         
         # 3. Draw elbow-hip distance reference
         if all(p is not None for p in [elbow_l, elbow_r, hip_l, hip_r]):
@@ -274,7 +280,7 @@ class Workout:
 
     # -------------------- Biceps Curl Validation --------------------
     def _check_biceps_elbow_angle(self, lm: Dict) -> Tuple[float, bool, str]:
-        """Check biceps curl elbow angle (40-80 degrees for contraction)"""
+        """Check biceps curl elbow angle with alternating arm tracking"""
         shoulder_l = self._get_point(lm, 5)
         shoulder_r = self._get_point(lm, 6)
         elbow_l = self._get_point(lm, 7)
@@ -285,21 +291,45 @@ class Workout:
         if any(p is None for p in [shoulder_l, elbow_l, wrist_l, shoulder_r, elbow_r, wrist_r]):
             return 0.0, False, "Missing arm landmarks"
         
-        # Calculate angles for both arms (wrist-elbow-shoulder)
+        # Calculate angles for both arms
         angle_l = self.angle_between(wrist_l, elbow_l, shoulder_l)
         angle_r = self.angle_between(wrist_r, elbow_r, shoulder_r)
-        avg_angle = (angle_l + angle_r) / 2
         
+        # Determine which arm is actively curling (angle < 50 degrees)
+        left_curling = angle_l < 50
+        right_curling = angle_r < 50
+        
+        # Initialize active arm on first curl
+        if self.active_arm is None:
+            if left_curling:
+                self.active_arm = 'left'
+            elif right_curling:
+                self.active_arm = 'right'
+            else:
+                return 0.0, False, "Start curling"
+        
+        # Check if we need to switch arms
+        if self.active_arm == 'left':
+            if self.last_counted_arm == 'left' and right_curling and not left_curling:
+                self.active_arm = 'right'
+            current_angle = angle_l
+        else:  # active_arm == 'right'
+            if self.last_counted_arm == 'right' and left_curling and not right_curling:
+                self.active_arm = 'left'
+            current_angle = angle_r
+        
+        # Validate the active arm's curl
         min_angle, max_angle = self.biceps_curl_angle_range
         
-        if avg_angle < min_angle:
-            self.feedback_handler.give_feedback("biceps_curl", "Lower the weight - curl too high")
-            return avg_angle, False, "Too contracted"
-        elif avg_angle > max_angle:
-            self.feedback_handler.give_feedback("biceps_curl", "Curl higher - bring weight up")
-            return avg_angle, False, "Not enough curl"
+        if current_angle < min_angle:
+            self.feedback_handler.give_feedback("biceps_curl", f"Lower the weight - curl too high ({self.active_arm})")
+            self.last_counted_arm = self.active_arm
+            return current_angle, True, f"Valid curl - {self.active_arm}"
+        elif current_angle > max_angle:
+            self.feedback_handler.give_feedback("biceps_curl", f"Curl higher - bring weight up ({self.active_arm})")
+            return current_angle, False, "Not enough curl"
         
-        return avg_angle, True, "Valid curl"
+        return current_angle, True, f"Valid curl - {self.active_arm}"
     
     def _check_biceps_extended_angle(self, lm: Dict) -> Tuple[float, bool, str]:
         """Check if arms are fully extended (160-180 degrees)"""
@@ -350,36 +380,46 @@ class Workout:
         return distance_l, True, "Elbows stable"
     
     def _check_standing_posture(self, lm: Dict) -> Tuple[bool, str]:
-        """Check full body is straight (shoulder-hip-ankle alignment)"""
+        """Check full body is straight using shoulder-hip distance from reference"""
         shoulder_l = self._get_point(lm, 5)
         shoulder_r = self._get_point(lm, 6)
         hip_l = self._get_point(lm, 11)
         hip_r = self._get_point(lm, 12)
-        ankle_l = self._get_point(lm, 15)
-        ankle_r = self._get_point(lm, 16)
         
-        if any(p is None for p in [shoulder_l, shoulder_r, hip_l, hip_r, ankle_l, ankle_r]):
+        if any(p is None for p in [shoulder_l, shoulder_r, hip_l, hip_r]):
             return False, "Missing body landmarks"
         
-        # Midpoints
+        if self.shoulder_reference_y is None:
+            return False, "No shoulder reference set"
+        
+        # Calculate current shoulder and hip midpoints
         shoulder_mid = (shoulder_l + shoulder_r) / 2
         hip_mid = (hip_l + hip_r) / 2
-        ankle_mid = (ankle_l + ankle_r) / 2
         
-        # Check if body is vertical (small horizontal deviation)
-        posture_line_start = shoulder_mid
-        posture_line_end = ankle_mid
+        # Calculate current shoulder-hip distance
+        current_shoulder_hip_dist = hip_mid[1] - shoulder_mid[1]
         
-        hip_dist = self.point_to_line_distance(hip_mid, posture_line_start, posture_line_end)
+        # Calculate reference shoulder-hip distance (from initial standing position)
+        reference_shoulder_hip_dist = hip_mid[1] - self.shoulder_reference_y
         
-        max_deviation = 40  # pixels tolerance
+        # Calculate deviation from reference
+        distance_deviation = abs(current_shoulder_hip_dist - reference_shoulder_hip_dist)
         
-        if hip_dist > max_deviation:
-            if hip_mid[0] > shoulder_mid[0]:
-                self.feedback_handler.give_feedback("biceps_curl", "Don't lean back - stand straight")
-            else:
+        print("@"*50)
+        print(f"Reference shoulder Y: {self.shoulder_reference_y:.2f}")
+        print(f"Current shoulder-hip distance: {current_shoulder_hip_dist:.2f}")
+        print(f"Reference shoulder-hip distance: {reference_shoulder_hip_dist:.2f}")
+        print(f"Deviation: {distance_deviation:.2f}")
+        print("@"*50)
+        
+        max_deviation = 10  # +/- 10 pixels tolerance
+        
+        if distance_deviation > max_deviation:
+            if current_shoulder_hip_dist < reference_shoulder_hip_dist:
                 self.feedback_handler.give_feedback("biceps_curl", "Don't lean forward - stand upright")
-            return False, "Leaning"
+            else:
+                self.feedback_handler.give_feedback("biceps_curl", "Don't lean back - stand straight")
+            return False, f"Leaning ({distance_deviation:.1f}px)"
         
         return True, "Straight posture"
 
@@ -449,7 +489,14 @@ class Workout:
             
             if self._detected_frames >= self.detection_confirmation_frames:
                 self.person_confirmed = True
-                print("Person detected reliably — starting workout.")
+                # SET SHOULDER REFERENCE
+                shoulder_l = self._get_point(lm, 5)
+                shoulder_r = self._get_point(lm, 6)
+                shoulder_mid = (shoulder_l + shoulder_r) / 2
+                self.shoulder_reference_y = shoulder_mid[1]
+                
+                print(f"Person detected reliably — starting workout.")
+                print(f"Shoulder reference Y set to: {self.shoulder_reference_y:.2f}")
                 cv2.putText(frame, "Person confirmed. Starting...", (10, 30),
                            cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
                 if self.visual:
@@ -519,7 +566,7 @@ class Workout:
                             is_valid, checks = self._validate_biceps_curl_rep(lm)
                             curl_angle = checks["elbow_curl_angle"][0]
                             
-                            if is_valid and curl_angle >= 40 and curl_angle <= 80:
+                            if is_valid and curl_angle <= 50:
                                 rep_count += 1
                                 print(f"Rep {rep_count}/{target_reps}")
                                 phase = "up"
@@ -541,7 +588,6 @@ class Workout:
                             cv2.putText(frame, f"{status} {check_name}: {msg} {display_value}", 
                                        (10, y_offset), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
                             y_offset += 20
-                    
                     if self.visual:
                         cv2.imshow("Workout (Press Q to quit)", frame)
                         if cv2.waitKey(1) & 0xFF == ord('q'):
