@@ -385,6 +385,8 @@ class Workout:
         shoulder_r = self._get_point(lm, 6)
         hip_l = self._get_point(lm, 11)
         hip_r = self._get_point(lm, 12)
+        knel=self._get_point(lm,13)
+        kner=self._get_point(lm,14)
         
         if any(p is None for p in [shoulder_l, shoulder_r, hip_l, hip_r]):
             return False, "Missing body landmarks"
@@ -403,23 +405,27 @@ class Workout:
         reference_shoulder_hip_dist = hip_mid[1] - self.shoulder_reference_y
         
         # Calculate deviation from reference
-        distance_deviation = abs(current_shoulder_hip_dist - reference_shoulder_hip_dist)
+        #distance_deviation = abs(current_shoulder_hip_dist - reference_shoulder_hip_dist)
         
         print("@"*50)
         print(f"Reference shoulder Y: {self.shoulder_reference_y:.2f}")
         print(f"Current shoulder-hip distance: {current_shoulder_hip_dist:.2f}")
         print(f"Reference shoulder-hip distance: {reference_shoulder_hip_dist:.2f}")
-        print(f"Deviation: {distance_deviation:.2f}")
         print("@"*50)
+        back_angle = self.angle_between(shoulder_l, hip_l, knel)
+        print("#"*50)
+        print(back_angle)
+        print("#"*50)
+        is_back_valid = 170 <= back_angle <= 180
+        max_deviation = 30  # +/- 10 pixels tolerance
+        rangesh= abs(current_shoulder_hip_dist-reference_shoulder_hip_dist)<60
         
-        max_deviation = 10  # +/- 10 pixels tolerance
-        
-        if distance_deviation > max_deviation:
+        if not is_back_valid:
             if current_shoulder_hip_dist < reference_shoulder_hip_dist:
                 self.feedback_handler.give_feedback("biceps_curl", "Don't lean forward - stand upright")
             else:
                 self.feedback_handler.give_feedback("biceps_curl", "Don't lean back - stand straight")
-            return False, f"Leaning ({distance_deviation:.1f}px)"
+            return False, f"Leaning ({back_angle:.1f}px)"
         
         return True, "Straight posture"
 
@@ -543,7 +549,7 @@ class Workout:
                     lm = self._get_landmarks(results)
                     
                     # Draw validation overlays based on exercise type
-                    self._draw_validation_overlays(frame, lm, exercise_name)
+                    #self._draw_validation_overlays(frame, lm, exercise_name)
                     
                     # Print all angles to terminal
                     if lm:
@@ -566,7 +572,7 @@ class Workout:
                             is_valid, checks = self._validate_biceps_curl_rep(lm)
                             curl_angle = checks["elbow_curl_angle"][0]
                             
-                            if is_valid and curl_angle <= 50:
+                            if is_valid and curl_angle <= 70:
                                 rep_count += 1
                                 print(f"Rep {rep_count}/{target_reps}")
                                 phase = "up"
