@@ -42,18 +42,21 @@ class Workout:
         # Angle error ranges (in degrees)
         self.elbow_angle_range = (10, 90)  # Adjusted for bottom position
         self.hand_shoulder_hip_range = (90, 180)  # > 90
-        self.chest_to_ground_range = (0,90) # ≤ 90 degrees
+        self.chest_to_ground_range = (0,80) # ≤ 90 degrees
         
         # Thresholds for rep transitions
-        self.bottom_elbow_threshold = 40
-        self.bottom_chest_threshold = 40
-        self.top_elbow_threshold = 140
+        self.bottom_elbow_threshold = 70  # edit elbow angle range
+        self.bottom_chest_threshold = 70  # edit chest angle range
+        self.top_elbow_threshold = 100
         
         # Lost detection threshold
-        self.lost_detection_threshold = 5
+        self.lost_detection_threshold = 3
         
         # Confirmation frames for bottom position
-        self.bottom_confirmation_frames =3
+        self.bottom_confirmation_frames = 4
+
+        # Confirmation frames for up position
+        self.up_confirmation_frames = 3
 
     # -------------------- Geometry Utilities --------------------
     def angle_between(self, a: np.ndarray, b: np.ndarray, c: np.ndarray) -> float:
@@ -283,14 +286,14 @@ class Workout:
         # Calculate angles for both sides
         angle_l = self.angle_between(ankle_l, shoulder_l, wrist_l)
         angle_r = self.angle_between(ankle_r, shoulder_r, wrist_r)
-        avg_angle = (angle_l + angle_r) / 2
+        
         
         min_angle, max_angle = self.chest_to_ground_range
         
-        if avg_angle > max_angle:
-            return avg_angle, False, "Go deeper - chest closer to ground"
+        if angle_r > max_angle and angle_l > max_angle:
+            return max(angle_r,angle_l), False, "Go deeper - chest closer to ground"
         
-        return avg_angle, True, "Valid"
+        return min(angle_r,angle_l), True, "Valid"
 
     # -------------------- Drawing Utilities --------------------
     def _draw_line(self, frame: np.ndarray, p1: np.ndarray, p2: np.ndarray, 
@@ -597,9 +600,10 @@ class Workout:
                     break
                 
                 rep_count = 0
-                is_at_bottom = False
+                state = "up"  # Start in up position
                 lost_detection_counter = 0
                 bottom_counter = 0
+                up_counter = 0
                 print(f"Set {group_idx + 1}: {target_reps} reps")
                 
                 while rep_count < target_reps:
@@ -634,8 +638,8 @@ class Workout:
                             if not valid:
                                 self.feedback_handler.give_feedback("push_up", msg)
                         
-                        # Give angle feedback only when not at bottom
-                        if not is_at_bottom:
+                        # Give angle feedback only when state == "up"
+                        if state == "up":
                             if not elbow_ok:
                                 self.feedback_handler.give_feedback("push_up", elbow_msg)
                             if not chest_ok:
@@ -644,26 +648,43 @@ class Workout:
                         # Check for bottom position
                         bottom_valid = form_valid and elbow_ok and chest_ok and elbow_val < self.bottom_elbow_threshold and chest_val < self.bottom_chest_threshold
                         
-                        if bottom_valid:
-                            bottom_counter += 1
-                            if bottom_counter >= self.bottom_confirmation_frames and not is_at_bottom:
-                                is_at_bottom = True
-                                rep_count += 1
-                                print(f"Rep {rep_count}/{target_reps}")
-                                cv2.putText(frame, "PHASE: DOWN", (10, 150),
-                                           cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 0, 0), 2)
-                                cv2.putText(frame, f"REP {rep_count} COMPLETE!", (10, 180),
-                                           cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
-                        else:
-                            bottom_counter = 0
-                            if is_at_bottom:
-                                is_at_bottom = False
+                        # Check for up position
+                        up_valid = elbow_val > self.top_elbow_threshold
+                        
+                        if state == "up":
+                            if bottom_valid:
+                                bottom_counter += 1
+                                up_counter = 0
+                                if bottom_counter >= self.bottom_confirmation_frames:
+                                    state = "down"
+                                    bottom_counter = 0
+                                    cv2.putText(frame, "PHASE: DOWN", (10, 150),
+                                               cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 0, 0), 2)
+                            else:
+                                bottom_counter = 0
+                        
+                        elif state == "down":
+                            if up_valid:
+                                up_counter += 1
+                                bottom_counter = 0
+                                if up_counter >= self.up_confirmation_frames:
+                                    state = "up"
+                                    rep_count += 1
+                                    print(f"Rep {rep_count}/{target_reps}")
+                                    up_counter = 0
+                                    cv2.putText(frame, "PHASE: UP", (10, 150),
+                                               cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
+                                    cv2.putText(frame, f"REP {rep_count} COMPLETE!", (10, 180),
+                                               cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
+                            else:
+                                up_counter = 0
                     
                     else:
                         lost_detection_counter += 1
                         bottom_counter = 0
-                        if lost_detection_counter > self.lost_detection_threshold and is_at_bottom:
-                            is_at_bottom = False
+                        up_counter = 0
+                        if lost_detection_counter > self.lost_detection_threshold and state == "down":
+                            state = "up"
                             print("[Info] Detection lost while at bottom, assuming moved up")
                     
                     # Display info
