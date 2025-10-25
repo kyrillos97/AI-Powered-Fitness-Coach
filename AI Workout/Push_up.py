@@ -40,9 +40,20 @@ class Workout:
         self.person_confirmed = False
         
         # Angle error ranges (in degrees)
-        self.elbow_angle_range = (35, 55)  # 45 ± 10
+        self.elbow_angle_range = (10, 90)  # Adjusted for bottom position
         self.hand_shoulder_hip_range = (90, 180)  # > 90
-        self.chest_to_ground_range = (0,40) # ≤ 10 degrees
+        self.chest_to_ground_range = (0,90) # ≤ 90 degrees
+        
+        # Thresholds for rep transitions
+        self.bottom_elbow_threshold = 40
+        self.bottom_chest_threshold = 40
+        self.top_elbow_threshold = 140
+        
+        # Lost detection threshold
+        self.lost_detection_threshold = 5
+        
+        # Confirmation frames for bottom position
+        self.bottom_confirmation_frames =3
 
     # -------------------- Geometry Utilities --------------------
     def angle_between(self, a: np.ndarray, b: np.ndarray, c: np.ndarray) -> float:
@@ -93,7 +104,7 @@ class Workout:
         critical_keypoints = [5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
         if len(finalres) != 0:
             for i in critical_keypoints:
-                if finalres[i] < 0.70:
+                if finalres[i] < 0.5:  # Lowered confidence threshold for better detection robustness
                     return lm
         
         kpts = results[0].keypoints.xy.cpu().numpy()
@@ -135,11 +146,10 @@ class Workout:
             return False, "Invalid body position"
         
         slope = y_diff / x_diff
-        tolerance = 0.2  # 20% tolerance
+        tolerance = 0.4  # 20% tolerance
         
         if slope > tolerance:
-            self.feedback_handler.give_feedback("push_up", "Keep your body horizontal - hands and feet aligned")
-            return False, "Not aligned"
+            return False, "Keep your body horizontal - hands and feet aligned"
         
         return True, "Aligned"
 
@@ -174,14 +184,12 @@ class Workout:
         
         if hip_dist > max_deviation:
             if hip_mid[1] > shoulder_mid[1] + 20:  # sagging hips
-                self.feedback_handler.give_feedback("push_up", "Don't sag your hips - keep core tight")
+                return False, "Don't sag your hips - keep core tight"
             else:
-                self.feedback_handler.give_feedback("push_up", "Don't pike your hips - keep body straight")
-            return False, "Hips misaligned"
+                return False, "Don't pike your hips - keep body straight"
         
         if knee_dist > max_deviation:
-            self.feedback_handler.give_feedback("push_up", "Keep your legs straight - no bending")
-            return False, "Knees misaligned"
+            return False, "Keep your legs straight - no bending"
         
         return True, "Straight"
 
@@ -206,8 +214,7 @@ class Workout:
         
         # If nose is significantly below shoulder, head is down
         if head_to_shoulder_y > 50:  # threshold in pixels
-            self.feedback_handler.give_feedback("push_up", "Look forward - don't drop your head")
-            return False, "Head down"
+            return False, "Look forward - don't drop your head"
         
         return True, "Head up"
 
@@ -226,46 +233,43 @@ class Workout:
         # Calculate angles for both arms
         angle_l = self.angle_between(shoulder_l, elbow_l, wrist_l)
         angle_r = self.angle_between(shoulder_r, elbow_r, wrist_r)
-        avg_angle = (angle_l + angle_r) / 2
+        
         
         min_angle, max_angle = self.elbow_angle_range
         
-        if avg_angle < min_angle:
-            self.feedback_handler.give_feedback("push_up", "Bend your elbows more - lower your body")
-            return avg_angle, False, "Too straight"
-        elif avg_angle > max_angle:
-            self.feedback_handler.give_feedback("push_up", "Extend your elbows more")
-            return avg_angle, False, "Too bent"
+        if angle_l > max_angle and angle_r> max_angle:
+            return max(angle_l,angle_r), False, "Bend your elbows more - lower your body"
+        elif angle_l < min_angle and angle_r< min_angle:
+            return min(angle_l,angle_r), False, "Extend your elbows more - don't over-bend"
         
-        return avg_angle, True, "Valid"
+        return min(angle_l,angle_r), True, "Valid"
 
-    def _check_hand_shoulder_hip_angle(self, lm: Dict) -> Tuple[float, bool, str]:
-        """Check 4.b: Angle between hand, shoulder, hip > 90 degrees"""
-        shoulder_l = self._get_point(lm, 5)
-        shoulder_r = self._get_point(lm, 6)
-        wrist_l = self._get_point(lm, 9)
-        wrist_r = self._get_point(lm, 10)
-        hip_l = self._get_point(lm, 11)
-        hip_r = self._get_point(lm, 12)
+    # def _check_hand_shoulder_hip_angle(self, lm: Dict) -> Tuple[float, bool, str]:
+    #     """Check 4.b: Angle between hand, shoulder, hip > 90 degrees"""
+    #     shoulder_l = self._get_point(lm, 5)
+    #     shoulder_r = self._get_point(lm, 6)
+    #     wrist_l = self._get_point(lm, 9)
+    #     wrist_r = self._get_point(lm, 10)
+    #     hip_l = self._get_point(lm, 11)
+    #     hip_r = self._get_point(lm, 12)
         
-        if any(p is None for p in [shoulder_l, wrist_l, hip_l, shoulder_r, wrist_r, hip_r]):
-            return 0.0, False, "Missing body landmarks"
+    #     if any(p is None for p in [shoulder_l, wrist_l, hip_l, shoulder_r, wrist_r, hip_r]):
+    #         return 0.0, False, "Missing body landmarks"
         
-        # Calculate angles for both sides
-        angle_l = self.angle_between(wrist_l, shoulder_l, hip_l)
-        angle_r = self.angle_between(wrist_r, shoulder_r, hip_r)
-        avg_angle = (angle_l + angle_r) / 2
+    #     # Calculate angles for both sides
+    #     angle_l = self.angle_between(wrist_l, shoulder_l, hip_l)
+    #     angle_r = self.angle_between(wrist_r, shoulder_r, hip_r)
+    #     avg_angle = (angle_l + angle_r) / 2
         
-        min_angle, max_angle = self.hand_shoulder_hip_range
+    #     min_angle, max_angle = self.hand_shoulder_hip_range
         
-        if avg_angle < min_angle:
-            self.feedback_handler.give_feedback("push_up", "Widen your stance or bring hands closer to your body")
-            return avg_angle, False, "Angle too small"
+    #     if avg_angle < min_angle:
+    #         return avg_angle, False, "Widen your stance or bring hands closer to your body"
         
-        return avg_angle, True, "Valid"
+    #     return avg_angle, True, "Valid"
 
     def _check_chest_to_ground(self, lm: Dict) -> Tuple[float, bool, str]:
-        """Check 4.c: Chest close to ground (shoulder-ankle-hand angle ≤ 10°)"""
+        """Check 4.c: Chest close to ground (shoulder-ankle-hand angle ≤ 60°)"""
         shoulder_l = self._get_point(lm, 5)
         shoulder_r = self._get_point(lm, 6)
         ankle_l = self._get_point(lm, 15)
@@ -278,16 +282,15 @@ class Workout:
         
         # Calculate angles for both sides
         angle_l = self.angle_between(ankle_l, shoulder_l, wrist_l)
-       #angle_r = self.angle_between(ankle_r, shoulder_r, wrist_r)
-       #avg_angle = (angle_l + angle_r) / 2
+        angle_r = self.angle_between(ankle_r, shoulder_r, wrist_r)
+        avg_angle = (angle_l + angle_r) / 2
         
         min_angle, max_angle = self.chest_to_ground_range
         
-        if angle_l> max_angle:
-            self.feedback_handler.give_feedback("push_up", "Go deeper - chest closer to ground")
-            return angle_l, False, "Not deep enough"
+        if avg_angle > max_angle:
+            return avg_angle, False, "Go deeper - chest closer to ground"
         
-        return angle_l, True, "Valid"
+        return avg_angle, True, "Valid"
 
     # -------------------- Drawing Utilities --------------------
     def _draw_line(self, frame: np.ndarray, p1: np.ndarray, p2: np.ndarray, 
@@ -486,7 +489,6 @@ class Workout:
                 cv2.line(frame, tuple(map(int, shoulder_r)), tuple(map(int, wrist_r)), (100, 200, 200), 2)
             
             # ========== JOINT MARKERS ==========
-            # Draw all joint positions with circles
             joints = [
                 (shoulder_l, "SL", (100, 100, 255)),
                 (shoulder_r, "SR", (100, 100, 255)),
@@ -507,11 +509,10 @@ class Workout:
                     cv2.circle(frame, pt, 8, (255, 255, 255), 2)
 
     # -------------------- Rep Validation --------------------
-    def _validate_push_up_rep(self, lm: Dict) -> Tuple[bool, Dict]:
-        """Comprehensive push-up validation"""
+    def _validate_form(self, lm: Dict) -> Tuple[bool, Dict]:
+        """Validate general form (alignment, back, head)"""
         checks = {}
         
-        # Checks that return (bool, str)
         feet_hands = self._check_feet_hands_alignment(lm)
         back = self._check_back_straight(lm)
         head = self._check_head_up(lm)
@@ -520,12 +521,6 @@ class Workout:
         checks["back_straight"] = (0, back[0], back[1])
         checks["head_up"] = (0, head[0], head[1])
         
-        # Checks that return (float, bool, str)
-        checks["elbow_angle"] = self._check_elbow_angle(lm)
-        checks["hand_shoulder_hip"] = self._check_hand_shoulder_hip_angle(lm)
-        checks["chest_to_ground"] = self._check_chest_to_ground(lm)
-        
-        # All checks must pass for valid rep
         all_valid = all(check[1] for check in checks.values())
         return all_valid, checks
 
@@ -545,7 +540,7 @@ class Workout:
             cv2.putText(frame, txt, (50, 200), cv2.FONT_HERSHEY_SIMPLEX,
                         1.0, (0, 0, 255), 3)
             
-            if label != "exercise":
+            if not is_exercise_rest:
                 txt = f"Push Up | Set {numset}/{tarset} and remaining sets: {tarset - numset}"
                 cv2.putText(frame, txt, (10, 60), cv2.FONT_HERSHEY_SIMPLEX,
                            0.8, (0, 255, 0), 2)
@@ -595,7 +590,6 @@ class Workout:
                     return
         
         # Main exercise loop
-        phase = "up"
         for ex_idx, (exercise_name, rep_groups) in enumerate(exercise_plan.items()):
             print(f"Starting {exercise_name}...")
             for group_idx, target_reps in enumerate(rep_groups):
@@ -603,6 +597,9 @@ class Workout:
                     break
                 
                 rep_count = 0
+                is_at_bottom = False
+                lost_detection_counter = 0
+                bottom_counter = 0
                 print(f"Set {group_idx + 1}: {target_reps} reps")
                 
                 while rep_count < target_reps:
@@ -620,33 +617,54 @@ class Workout:
                     lm = self._get_landmarks(results)
                     
                     # Draw validation overlays
-                    self._draw_validation_overlays(frame, lm)
+                    #self._draw_validation_overlays(frame, lm)
                     
                     # Print all angles to terminal
                     if lm:
                         self._print_all_angles(lm)
                     
                     if lm:
-                        is_valid, checks = self._validate_push_up_rep(lm)
+                        lost_detection_counter = 0
+                        form_valid, form_checks = self._validate_form(lm)
+                        elbow_val, elbow_ok, elbow_msg = self._check_elbow_angle(lm)
+                        chest_val, chest_ok, chest_msg = self._check_chest_to_ground(lm)
                         
-                        if phase == "up":
-                            # At top position, check if going down
-                            if is_valid:
-                                phase = "down"
-                                cv2.putText(frame, "PHASE: DOWN", (10, 150),
-                                           cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 0, 0), 2)
+                        # Give form feedback always
+                        for name, (_, valid, msg) in form_checks.items():
+                            if not valid:
+                                self.feedback_handler.give_feedback("push_up", msg)
                         
-                        elif phase == "down":
-                            # At bottom position, check if going up
-                            elbow_angle_val = checks["elbow_angle"][0]
-                            chest_to_ground_val = checks["chest_to_ground"][0]
-                            
-                            if elbow_angle_val < 60 and chest_to_ground_val < 12:
+                        # Give angle feedback only when not at bottom
+                        if not is_at_bottom:
+                            if not elbow_ok:
+                                self.feedback_handler.give_feedback("push_up", elbow_msg)
+                            if not chest_ok:
+                                self.feedback_handler.give_feedback("push_up", chest_msg)
+                        
+                        # Check for bottom position
+                        bottom_valid = form_valid and elbow_ok and chest_ok and elbow_val < self.bottom_elbow_threshold and chest_val < self.bottom_chest_threshold
+                        
+                        if bottom_valid:
+                            bottom_counter += 1
+                            if bottom_counter >= self.bottom_confirmation_frames and not is_at_bottom:
+                                is_at_bottom = True
                                 rep_count += 1
                                 print(f"Rep {rep_count}/{target_reps}")
-                                phase = "up"
-                                cv2.putText(frame, f"REP {rep_count} COMPLETE!", (10, 150),
+                                cv2.putText(frame, "PHASE: DOWN", (10, 150),
+                                           cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 0, 0), 2)
+                                cv2.putText(frame, f"REP {rep_count} COMPLETE!", (10, 180),
                                            cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
+                        else:
+                            bottom_counter = 0
+                            if is_at_bottom:
+                                is_at_bottom = False
+                    
+                    else:
+                        lost_detection_counter += 1
+                        bottom_counter = 0
+                        if lost_detection_counter > self.lost_detection_threshold and is_at_bottom:
+                            is_at_bottom = False
+                            print("[Info] Detection lost while at bottom, assuming moved up")
                     
                     # Display info
                     txt = f"Push Up | Rep {rep_count}/{target_reps}"
@@ -654,9 +672,11 @@ class Workout:
                                0.8, (0, 255, 0), 2)
                     
                     if lm:
-                        _, checks = self._validate_push_up_rep(lm)
+                        all_checks = {**form_checks}
+                        all_checks["elbow_angle"] = (elbow_val, elbow_ok, elbow_msg)
+                        all_checks["chest_to_ground"] = (chest_val, chest_ok, chest_msg)
                         y_offset = 90
-                        for check_name, (value, is_valid, msg) in checks.items():
+                        for check_name, (value, is_valid, msg) in all_checks.items():
                             color = (0, 255, 0) if is_valid else (0, 0, 255)
                             status = "✓" if is_valid else "✗"
                             cv2.putText(frame, f"{status} {check_name}: {msg}", (10, y_offset),
