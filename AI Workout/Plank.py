@@ -86,21 +86,21 @@ class Workout:
         c = np.array(lm[str(triplet[2])], dtype=float)
         return self.angle_between(a, b, c)
 
-    def _is_body_straight(self, lm, threshold=50):  # Increased from 30 to 50 for more tolerance
-        if not all(str(k) in lm for k in [5,6,11,12,15,16]):
-            return False
-        y_s = (lm['5'][1] + lm['6'][1]) / 2
-        y_h = (lm['11'][1] + lm['12'][1]) / 2
-        y_a = (lm['15'][1] + lm['16'][1]) / 2
-        y_avg = (y_s + y_a) / 2
-        dev = abs(y_h - y_avg)
-        if dev > threshold:
-            if y_h > y_avg:
-                self.feedback_handler.give_feedback("plank", "Don't sag your hips - keep core tight")
-            else:
-                self.feedback_handler.give_feedback("plank", "Don't pike your hips - keep body straight")
-            return False
-        return True
+    # def _is_body_straight(self, lm, threshold=50):  # Increased from 30 to 50 for more tolerance
+    #     if not all(str(k) in lm for k in [5,6,11,12,15,16]):
+    #         return False
+    #     y_s = (lm['5'][1] + lm['6'][1]) / 2
+    #     y_h = (lm['11'][1] + lm['12'][1]) / 2
+    #     y_a = (lm['15'][1] + lm['16'][1]) / 2
+    #     y_avg = (y_s + y_a) / 2
+    #     dev = abs(y_h - y_avg)
+    #     if dev > threshold:
+    #         if y_h > y_avg:
+    #             self.feedback_handler.give_feedback("plank", "Don't sag your hips - keep core tight")
+    #         else:
+    #             self.feedback_handler.give_feedback("plank", "Don't pike your hips - keep body straight")
+    #         return False
+    #     return True
 
     # -------------------- Elbow Angle Check --------------------
     def check_elbow_angle(self, lm) -> Tuple[bool, float]:
@@ -110,7 +110,7 @@ class Workout:
         Returns: (is_valid, arm_angle_average)
         """
         elbow_target = 90
-        elbow_threshold = 20  # Increased from 15 for more tolerance
+        elbow_threshold = 30  # Increased from 15 for more tolerance
 
         # Right arm: shoulder(6) -> elbow(8) -> wrist(10)
         right_elbow_angle = self._compute_angle_for_triplet(lm, (6, 8, 10))
@@ -155,7 +155,7 @@ class Workout:
         return is_valid, avg_elbow_angle
 
     # -------------------- Back Straight Check --------------------
-    def check_back_straight(self, lm, angle_threshold=20) -> bool:  # Increased from 15 to 20
+    def check_back_straight(self, lm, angle_threshold=30) -> bool:
         """
         Check if the back is straight (180 degrees along the body line).
         Uses angle calculations to validate body alignment, preferring dominant side.
@@ -180,15 +180,19 @@ class Workout:
 
         # Calculate angles for back alignment
         # Angle between head-shoulder-hip
-        upper_angle = self.angle_between(head_pos, shoulder_pos, hip_pos)
+        #upper_angle = self.angle_between(head_pos, shoulder_pos, hip_pos)
         # Angle between shoulder-hip-ankle
         lower_angle = self.angle_between(shoulder_pos, hip_pos, ankle_pos)
+        
+        print('*'*50)
+        print(lower_angle)
+        print('*'*50)
 
         # New: Temporal smoothing
-        self.recent_upper_angles.append(upper_angle)
-        if len(self.recent_upper_angles) > 5:
-            self.recent_upper_angles.pop(0)
-        smoothed_upper = np.mean(self.recent_upper_angles) if self.recent_upper_angles else 0
+        # self.recent_upper_angles.append(upper_angle)
+        # if len(self.recent_upper_angles) > 5:
+        #     self.recent_upper_angles.pop(0)
+        # smoothed_upper = np.mean(self.recent_upper_angles) if self.recent_upper_angles else 0
 
         self.recent_lower_angles.append(lower_angle)
         if len(self.recent_lower_angles) > 5:
@@ -196,17 +200,17 @@ class Workout:
         smoothed_lower = np.mean(self.recent_lower_angles) if self.recent_lower_angles else 0
 
         # For a straight back, both angles should be close to 180°
-        upper_is_straight = abs(smoothed_upper - 180) <= angle_threshold
+        #upper_is_straight = abs(smoothed_upper - 180) <= angle_threshold
         lower_is_straight = abs(smoothed_lower - 180) <= angle_threshold
 
-        is_straight = upper_is_straight and lower_is_straight
+        is_straight = lower_is_straight
 
         if not is_straight:
-            if smoothed_upper < 180 - angle_threshold:
-                self.feedback_handler.give_feedback("plank", "Hips sagging - engage your core and lift hips up")
-            elif smoothed_upper > 180 + angle_threshold:
-                self.feedback_handler.give_feedback("plank", "Hips piking too high - lower hips to align with shoulders")
-            elif smoothed_lower < 180 - angle_threshold:
+            # if smoothed_upper < 180 - angle_threshold:
+            #     self.feedback_handler.give_feedback("plank", "Hips sagging - engage your core and lift hips up")
+            # elif smoothed_upper > 180 + angle_threshold:
+            #     self.feedback_handler.give_feedback("plank", "Hips piking too high - lower hips to align with shoulders")
+            if smoothed_lower < 180 - angle_threshold:
                 self.feedback_handler.give_feedback("plank", "Ankles not aligned - keep legs straight")
             elif smoothed_lower > 180 + angle_threshold:
                 self.feedback_handler.give_feedback("plank", "Lower body bent - straighten your legs")
@@ -216,13 +220,12 @@ class Workout:
         return is_straight
 
     # -------------------- Validation --------------------
-    def _validate_plank(self, body_straight: bool, elbow_valid: bool, back_straight: bool) -> bool:
+    def _validate_plank(self,elbow_valid: bool, back_straight: bool) -> bool:
         """
         Validate overall plank form based on key metrics.
         Returns True only if all form requirements are met.
         """
-        if not body_straight:
-            return False
+      
         if not elbow_valid:
             return False
         if not back_straight:
@@ -312,13 +315,13 @@ class Workout:
                     back_straight = False
                     # Since we confirmed person once at start, proceed to compute angles regardless
                     if lm:
-                        body_straight = self._is_body_straight(lm)  # Uncommented to include in validation
+                        # body_straight = self._is_body_straight(lm)  # Uncommented to include in validation
                         # Check elbow angle (90° ± 20°)
                         elbow_valid, avg_elbow_angle = self.check_elbow_angle(lm)
                         # Check back alignment (180°)
                         back_straight = self.check_back_straight(lm)
                     current_time = time.time()
-                    is_good_form = self._validate_plank(body_straight, elbow_valid, back_straight)
+                    is_good_form = self._validate_plank(elbow_valid, back_straight)
                     if is_good_form:
                         if hold_start is None:
                             hold_start = current_time
@@ -342,14 +345,14 @@ class Workout:
                     back_color = (0, 255, 0) if back_straight else (0, 0, 255)
                     cv2.putText(frame, f"Back: {'STRAIGHT' if back_straight else 'NOT STRAIGHT'} {'✓' if back_straight else '✗'}", (10, 110),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.6, back_color, 2)
-                    # Display body alignment check result
-                    body_color = (0, 255, 0) if body_straight else (0, 0, 255)
-                    cv2.putText(frame, f"Body: {'ALIGNED' if body_straight else 'MISALIGNED'} {'✓' if body_straight else '✗'}", (10, 130),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.6, body_color, 2)
+                    # # Display body alignment check result
+                    # body_color = (0, 255, 0) if body_straight else (0, 0, 255)
+                    # cv2.putText(frame, f"Body: {'ALIGNED' if body_straight else 'MISALIGNED'} {'✓' if body_straight else '✗'}", (10, 130),
+                    #             cv2.FONT_HERSHEY_SIMPLEX, 0.6, body_color, 2)
                     # Display overall form status
-                    form_color = (0, 255, 0) if is_good_form else (0, 0, 255)
-                    cv2.putText(frame, f"Form: {'GOOD' if is_good_form else 'NEEDS ADJUSTMENT'}", (10, 150),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.7, form_color, 2)
+                    # form_color = (0, 255, 0) if is_good_form else (0, 0, 255)
+                    # cv2.putText(frame, f"Form: {'GOOD' if is_good_form else 'NEEDS ADJUSTMENT'}", (10, 150),
+                    #             cv2.FONT_HERSHEY_SIMPLEX, 0.7, form_color, 2)
                     if self.visual:
                         cv2.imshow("Workout (Press Q to quit)", frame)
                         if cv2.waitKey(1) & 0xFF == ord('q'):
