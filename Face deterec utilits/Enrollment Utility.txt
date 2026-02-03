@@ -1,0 +1,29 @@
+import 'dart:convert';
+
+class FaceEnrollmentService {
+  final FaceRecognitionService _recogService;
+
+  FaceEnrollmentService(this._recogService);
+
+  /// Takes 3 cropped face images and returns a JSON string to store in DB
+  String createMasterProfile(List<img.Image> threePhotos) {
+    List<List<double>> embeddings = [];
+
+    for (var photo in threePhotos) {
+      embeddings.add(_recogService.getEmbedding(photo));
+    }
+
+    // Average the vectors for a "Robust Master Embedding"
+    List<double> masterVector = List.filled(FaceRecognitionService.embeddingSize, 0.0);
+    for (var vector in embeddings) {
+      for (int i = 0; i < vector.length; i++) {
+        masterVector[i] += vector[i];
+      }
+    }
+    
+    var finalVector = masterVector.map((e) => e / 3).toList();
+    
+    // Return as String to store in your Database (PostgreSQL/SQL/Firebase)
+    return jsonEncode(finalVector);
+  }
+}

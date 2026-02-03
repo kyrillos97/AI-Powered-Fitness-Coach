@@ -1,0 +1,47 @@
+import 'dart:math';
+import 'dart:typed_data';
+import 'package:tflite_flutter/tflite_flutter.dart';
+import 'package:image/image.dart' as img;
+
+class FaceRecognitionService {
+  late Interpreter _interpreter;
+
+  // MobileFaceNet standard: 112x112 input, 192-dim output
+  static const int inputSize = 112; 
+  static const int embeddingSize = 192;
+
+  Future<void> loadModel() async {
+    final options = InterpreterOptions();
+    // In 2026, we use NPU/GPU delegates for speed
+    if (/* if Android */ true) options.addDelegate(GpuDelegateV2()); 
+    _interpreter = await Interpreter.fromAsset('mobile_facenet.tflite', options: options);
+  }
+
+  /// Converts a cropped face image into a 192-D vector
+  List<double> getEmbedding(img.Image faceCrop) {
+    // 1. Resize to 112x112
+    img.Image resized = img.copyResize(faceCrop, width: inputSize, height: inputSize);
+
+    // 2. Pre-process (Normalization: -1 to 1)
+    var input = _imageToByteList(resized);
+    var output = List.filled(1 * embeddingSize, 0.0).reshape([1, embeddingSize]);
+
+    _interpreter.run(input, output);
+    return List<double>.from(output[0]);
+  }
+
+  Uint8List _imageToByteList(img.Image image) {
+    var buffer = Float32List(1 * inputSize * inputSize * 3);
+    int pixelIndex = 0;
+    for (int i = 0; i < inputSize; i++) {
+      for (int j = 0; j < inputSize; j++) {
+        var pixel = image.getPixel(j, i);
+        // Normalize: (pixel - 128) / 128
+        buffer[pixelIndex++] = (img.getRed(pixel) - 128) / 128.0;
+        buffer[pixelIndex++] = (img.getGreen(pixel) - 128) / 128.0;
+        buffer[pixelIndex++] = (img.getBlue(pixel) - 128) / 128.0;
+      }
+    }
+    return buffer.buffer.asUint8List();
+  }
+}

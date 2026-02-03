@@ -1,0 +1,58 @@
+class StylishFacePainter extends CustomPainter {
+  final Rect box;
+  final String name;
+  final double confidence;
+
+  StylishFacePainter(this.box, this.name, this.confidence);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final isMatch = confidence > 0.75;
+    final color = isMatch ? const Color(0xFF00FFC2) : Colors.redAccent;
+
+    // 1. Draw Stylish Bounding Box (Corners only)
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 4.0
+      ..strokeCap = StrokeCap.round;
+
+    final path = Path()
+      ..moveTo(box.left, box.top + 20)
+      ..lineTo(box.left, box.top)
+      ..lineTo(box.left + 20, box.top)
+      ..moveTo(box.right - 20, box.top)
+      ..lineTo(box.right, box.top)
+      ..lineTo(box.right, box.top + 20);
+      // ... (repeat for bottom corners)
+    canvas.drawPath(path, paint);
+
+    // 2. Draw Name Label with Stylish Background
+    final textPainter = TextPainter(
+      text: TextSpan(
+        text: isMatch ? "AUTHENTICATED: $name" : "UNKNOWN PERSON",
+        style: const TextStyle(
+          color: Colors.black,
+          fontSize: 16,
+          fontWeight: FontWeight.w900,
+          letterSpacing: 1.2,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+
+    final bgPaint = Paint()..color = color;
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromLTWH(box.left, box.top - 35, textPainter.width + 20, 30),
+        const Radius.circular(8),
+      ),
+      bgPaint,
+    );
+
+    textPainter.paint(canvas, Offset(box.left + 10, box.top - 30));
+  }
+
+  @override
+  bool shouldRepaint(CustomPainter oldDelegate) => true;
+}
