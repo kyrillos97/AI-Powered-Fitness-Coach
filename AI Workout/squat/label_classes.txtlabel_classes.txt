@@ -1,0 +1,3 @@
+0,backrounding
+1,perfect
+2,shallow

@@ -1,0 +1,3 @@
+0,BackRounding
+1,Perfect
+2,Shallow
