@@ -1,0 +1,4 @@
+0,front_shoulder_bent_elbow
+1,front_shoulder_low
+2,front_shoulder_over_range
+3,front_shoulder_perfect

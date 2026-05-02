@@ -1,0 +1,839 @@
+"""
+realtime_front_shoulder_PRODUCTION.py
+=====================================
+Production front shoulder raise classifier.
+
+Smooth velocity-based rep detection:
+  REST → RISING → FALLING → CAPTURED → COOLDOWN → REST
+
+No hard angle thresholds. No OOD rejection.
+VAE latent z fused into classifier (Enhancement 2 only).
+
+Keys: Q/ESC = quit    R = reset    S = set summary
+"""
+
+import argparse
+import collections
+import os
+import pickle
+import threading
+import queue
+import time
+from enum import Enum
+import numpy as np
+import cv2
+import mediapipe as mp
+
+try:
+    import tflite_runtime.interpreter as tflite
+    Interpreter = tflite.Interpreter
+except ImportError:
+    import tensorflow as tf
+    Interpreter = tf.lite.Interpreter
+
+# ══════════════════════════════════════════════════════════════════
+# CONFIG
+# ══════════════════════════════════════════════════════════════════
+SMOOTH_ALPHA       = 0.5     # feature pipeline EMA (matches training)
+MIN_FRAMES         = 8
+
+# ── Smooth State Machine (all relative, no fixed angles) ────────
+ANGLE_EMA          = 0.40    # smoothing on raw angle
+VEL_EMA            = 0.35    # smoothing on velocity
+REST_EMA           = 0.02    # how fast rest baseline adapts (slow)
+PRE_ROLL           = 20      # pre-roll frames to capture motion start
+MAX_REC_FRAMES     = 180     # timeout safety
+COOLDOWN_FRAMES    = 15      # pause between reps
+
+# Velocity softness (degrees/frame — very loose, not body-dependent)
+VEL_RISING         = 0.4     # arm is moving up
+VEL_PEAKED         = -0.15   # velocity turned negative → peaked
+VEL_STILL          = 0.35    # arm stopped moving
+
+# Relative motion (percentage/degrees from YOUR rest, not fixed)
+MIN_RISE_FROM_REST = 8.0     # minimum degrees risen to start recording
+MIN_PEAK_RISE      = 12.0    # minimum total rise for valid rep
+RETURN_PCT         = 0.30    # return within 30% of rise = back at rest
+FALSE_START_RISE   = 6.0     # if rising stalls below this, cancel
+
+# ── Voice ────────────────────────────────────────────────────────
+VOICE_ENABLED      = True
+VOICE_RATE         = 170
+VOICE_VOLUME       = 0.9
+
+JOINT_IDX = [0, 11, 12, 13, 14, 15, 16, 23, 24]
+
+
+# ══════════════════════════════════════════════════════════════════
+# VOICE FEEDBACK (threaded, non-blocking)
+# ══════════════════════════════════════════════════════════════════
+class VoiceFeedback:
+    def __init__(self, enabled=True, rate=170, volume=0.9):
+        self._q = queue.Queue()
+        self._engine = None
+        if enabled:
+            try:
+                import pyttsx3
+                self._engine = pyttsx3.init()
+                self._engine.setProperty('rate', rate)
+                self._engine.setProperty('volume', volume)
+                voices = self._engine.getProperty('voices')
+                for v in voices:
+                    if 'english' in v.name.lower() or 'david' in v.name.lower():
+                        self._engine.setProperty('voice', v.id)
+                        break
+                print("Voice engine ready")
+            except Exception as e:
+                print(f"Voice unavailable ({e}) — console only")
+                self._engine = None
+        self._thread = threading.Thread(target=self._worker, daemon=True)
+        self._thread.start()
+
+    def say(self, text, priority=False):
+        if priority:
+            while not self._q.empty():
+                try:
+                    self._q.get_nowait()
+                except queue.Empty:
+                    break
+        self._q.put(text)
+
+    def _worker(self):
+        while True:
+            text = self._q.get()
+            print(f"  [voice] {text}")
+            if self._engine:
+                try:
+                    self._engine.say(text)
+                    self._engine.runAndWait()
+                except Exception:
+                    pass
+
+
+# ══════════════════════════════════════════════════════════════════
+# SMOOTH STATE MACHINE — velocity + relative motion
+# ══════════════════════════════════════════════════════════════════
+class Phase(Enum):
+    REST     = "REST"
+    RISING   = "RISING"
+    FALLING  = "FALLING"
+    COOLDOWN = "COOLDOWN"
+
+
+class SmoothRepDetector:
+    """
+    Detects reps by reading the SHAPE of movement:
+      velocity positive → rising
+      velocity crosses zero → peaked
+      velocity negative → falling
+      angle returns near rest → complete
+
+    No fixed angle thresholds. Adapts to each person's rest position.
+    Pre-roll buffer captures the start of motion retroactively.
+    """
+
+    def __init__(self):
+        self.phase          = Phase.REST
+        self.pre_buffer     = collections.deque(maxlen=PRE_ROLL)
+        self.rec_buffer     = []
+
+        # Smoothed signals
+        self.s_angle        = 0.0       # smoothed angle
+        self.s_vel          = 0.0       # smoothed velocity (deg/frame)
+        self.prev_angle     = 0.0
+
+        # Adaptive rest baseline (learns YOUR rest position)
+        self.rest_angle     = None
+
+        # Rep tracking
+        self.peak_angle     = 0.0
+        self.rise_amount    = 0.0       # current rise from rest
+        self.return_pct     = 1.0       # 0=at rest, 1=at peak
+        self.cooldown_count = 0
+        self.frame_count    = 0
+
+    def reset(self):
+        self.phase          = Phase.REST
+        self.pre_buffer.clear()
+        self.rec_buffer     = []
+        self.s_angle        = 0.0
+        self.s_vel          = 0.0
+        self.prev_angle     = 0.0
+        self.rest_angle     = None
+        self.peak_angle     = 0.0
+        self.rise_amount    = 0.0
+        self.return_pct     = 1.0
+        self.cooldown_count = 0
+        self.frame_count    = 0
+
+    def update(self, lm, raw_angle):
+        """
+        Feed one frame.
+        Returns:
+          np.ndarray (N,33,3)  — complete rep frames
+          "timeout"            — recording timed out
+          "false_start"        — motion stalled, not a real rep
+          None                 — no event
+        """
+        self.frame_count += 1
+
+        # ── First frame: initialize ───────────────────────────────
+        if self.frame_count == 1:
+            self.s_angle    = raw_angle
+            self.prev_angle = raw_angle
+            self.rest_angle = raw_angle
+            self.pre_buffer.append(lm.copy())
+            return None
+
+        # ── Smooth angle ──────────────────────────────────────────
+        self.prev_angle = self.s_angle
+        self.s_angle = ANGLE_EMA * raw_angle + (1 - ANGLE_EMA) * self.s_angle
+
+        # ── Smooth velocity (deg/frame) ───────────────────────────
+        raw_vel  = self.s_angle - self.prev_angle
+        self.s_vel = VEL_EMA * raw_vel + (1 - VEL_EMA) * self.s_vel
+
+        # ── Rise from rest ────────────────────────────────────────
+        if self.rest_angle is not None:
+            self.rise_amount = self.s_angle - self.rest_angle
+        else:
+            self.rise_amount = 0.0
+
+        result = None
+
+        # ══════════════════════════════════════════════════════════
+        # REST — monitoring, adapting baseline
+        # ══════════════════════════════════════════════════════════
+        if self.phase == Phase.REST:
+            self.pre_buffer.append(lm.copy())
+
+            # Slowly learn rest position (adapts to person)
+            self.rest_angle = ((1 - REST_EMA) * self.rest_angle
+                               + REST_EMA * self.s_angle)
+
+            # Transition → RISING: velocity sustained upward + risen from rest
+            if self.s_vel > VEL_RISING and self.rise_amount > MIN_RISE_FROM_REST:
+                self.phase      = Phase.RISING
+                self.rec_buffer = list(self.pre_buffer)   # pre-roll!
+                self.rec_buffer.append(lm.copy())
+                self.peak_angle = self.s_angle
+                print(f"  >> RISING  vel={self.s_vel:+.2f}  "
+                      f"rise={self.rise_amount:.1f} from rest={self.rest_angle:.1f}")
+
+        # ══════════════════════════════════════════════════════════
+        # RISING — arm going up, waiting for peak
+        # ══════════════════════════════════════════════════════════
+        elif self.phase == Phase.RISING:
+            self.rec_buffer.append(lm.copy())
+            self.peak_angle = max(self.peak_angle, self.s_angle)
+
+            total_rise = self.peak_angle - self.rest_angle
+
+            # Transition → FALLING: velocity turned negative + meaningful peak
+            if self.s_vel < VEL_PEAKED and total_rise > MIN_PEAK_RISE:
+                self.phase = Phase.FALLING
+                print(f"  >> PEAKED  peak={self.peak_angle:.1f}  "
+                      f"total_rise={total_rise:.1f}")
+
+            # False start: velocity stalled and didn't rise enough
+            elif (abs(self.s_vel) < VEL_STILL * 0.5
+                  and total_rise < FALSE_START_RISE
+                  and len(self.rec_buffer) > 20):
+                self.phase      = Phase.REST
+                self.rec_buffer = []
+                self.peak_angle = 0.0
+                print(f"  >> false start (rise={total_rise:.1f})")
+                return "false_start"
+
+            # Timeout
+            if len(self.rec_buffer) > MAX_REC_FRAMES:
+                self.phase          = Phase.COOLDOWN
+                self.cooldown_count = COOLDOWN_FRAMES
+                self.rec_buffer     = []
+                self.peak_angle     = 0.0
+                return "timeout"
+
+        # ══════════════════════════════════════════════════════════
+        # FALLING — arm coming down, waiting for return to rest
+        # ══════════════════════════════════════════════════════════
+        elif self.phase == Phase.FALLING:
+            self.rec_buffer.append(lm.copy())
+
+            # How far back toward rest? (0.0 = at rest, 1.0 = at peak)
+            total_rise = max(self.peak_angle - self.rest_angle, 1.0)
+            current_rise = max(self.s_angle - self.rest_angle, 0.0)
+            self.return_pct = current_rise / total_rise
+
+            # Rep COMPLETE: returned close to rest + velocity near zero
+            if self.return_pct < RETURN_PCT and abs(self.s_vel) < VEL_STILL:
+                result = np.stack(self.rec_buffer)
+                self.phase          = Phase.COOLDOWN
+                self.cooldown_count = COOLDOWN_FRAMES
+                print(f"  >> COMPLETE  frames={len(result)}  "
+                      f"return={self.return_pct:.0%}")
+                self.rec_buffer = []
+                self.peak_angle = 0.0
+
+            # Timeout
+            elif len(self.rec_buffer) > MAX_REC_FRAMES:
+                self.phase          = Phase.COOLDOWN
+                self.cooldown_count = COOLDOWN_FRAMES
+                self.rec_buffer     = []
+                self.peak_angle     = 0.0
+                return "timeout"
+
+        # ══════════════════════════════════════════════════════════
+        # COOLDOWN — brief pause, prevents double-detection
+        # ══════════════════════════════════════════════════════════
+        elif self.phase == Phase.COOLDOWN:
+            self.cooldown_count -= 1
+            if self.cooldown_count <= 0:
+                self.phase = Phase.REST
+                self.pre_buffer.clear()
+                # Re-anchor rest to current angle
+                self.rest_angle = self.s_angle
+
+        return result
+
+
+# ══════════════════════════════════════════════════════════════════
+# FEATURE PIPELINE (identical to training)
+# ══════════════════════════════════════════════════════════════════
+def angle_batch(a, b, c):
+    ba = a - b; bc = c - b
+    dot = np.sum(ba * bc, axis=-1)
+    n   = np.linalg.norm(ba, axis=-1) * np.linalg.norm(bc, axis=-1) + 1e-6
+    return np.degrees(np.arccos(np.clip(dot / n, -1.0, 1.0)))[:, None]
+
+def ema_smooth(seq, alpha):
+    out = [seq[0]]
+    for i in range(1, len(seq)):
+        out.append(alpha * seq[i] + (1.0 - alpha) * out[-1])
+    return np.array(out, dtype=np.float32)
+
+def resample(seq, target):
+    T = len(seq)
+    if T == target: return seq.astype(np.float32)
+    idx = np.linspace(0, T - 1, target)
+    out = np.zeros((target, seq.shape[1]), dtype=np.float32)
+    for f in range(seq.shape[1]):
+        out[:, f] = np.interp(idx, np.arange(T), seq[:, f])
+    return out
+
+def process_rep(frames, target_frames):
+    T    = len(frames)
+    norm = ema_smooth(frames, SMOOTH_ALPHA)
+
+    mid_hip     = (norm[:, 23] + norm[:, 24]) / 2.0
+    mid_sho     = (norm[:, 11] + norm[:, 12]) / 2.0
+    torso_scale = np.linalg.norm(mid_sho - mid_hip, axis=-1, keepdims=True) + 1e-6
+
+    def norm_y(idx):
+        return -(norm[:, idx, 1] - mid_hip[:, 1]) / torso_scale[:, 0]
+
+    wrist_l_y = norm_y(15); wrist_r_y = norm_y(16)
+    sho_l_y   = norm_y(11); sho_r_y   = norm_y(12)
+
+    elbow_l = angle_batch(norm[:,11], norm[:,13], norm[:,15])
+    elbow_r = angle_batch(norm[:,12], norm[:,14], norm[:,16])
+
+    wl = wrist_l_y[:, None]; wr = wrist_r_y[:, None]
+    vel_l = np.concatenate([np.zeros((1,1),np.float32), np.diff(wl,axis=0)],axis=0)
+    vel_r = np.concatenate([np.zeros((1,1),np.float32), np.diff(wr,axis=0)],axis=0)
+    acc_l = np.concatenate([np.zeros((1,1),np.float32), np.diff(vel_l,axis=0)],axis=0)
+    acc_r = np.concatenate([np.zeros((1,1),np.float32), np.diff(vel_r,axis=0)],axis=0)
+
+    peak_w_l  = float(np.max(wrist_l_y)); peak_w_r = float(np.max(wrist_r_y))
+    rom_w_l   = peak_w_l - float(np.min(wrist_l_y))
+    rom_w_r   = peak_w_r - float(np.min(wrist_r_y))
+    peak_f_l  = int(np.argmax(wrist_l_y)); peak_f_r = int(np.argmax(wrist_r_y))
+    peak_asym = float(abs(peak_w_l - peak_w_r))
+
+    min_el_l    = float(np.min(elbow_l)); max_el_l = float(np.max(elbow_l))
+    min_el_r    = float(np.min(elbow_r)); max_el_r = float(np.max(elbow_r))
+    rom_el_l    = max_el_l - min_el_l; rom_el_r = max_el_r - min_el_r
+    max_el_asym = float(np.max(np.abs(elbow_l - elbow_r)))
+
+    sho_tilt      = np.abs(sho_l_y - sho_r_y)
+    sho_tilt_max  = float(np.max(sho_tilt))
+    sho_tilt_mean = float(np.mean(sho_tilt))
+
+    wrist_l_x = (norm[:, 15, 0] - norm[:, 11, 0]) / torso_scale[:, 0]
+    wrist_r_x = (norm[:, 16, 0] - norm[:, 12, 0]) / torso_scale[:, 0]
+    fwd_l = float(np.max(np.abs(wrist_l_x)))
+    fwd_r = float(np.max(np.abs(wrist_r_x)))
+
+    peak_vel_l = float(np.max(np.abs(vel_l)))
+    peak_vel_r = float(np.max(np.abs(vel_r)))
+    mean_acc_l = float(np.mean(np.abs(acc_l)))
+    mean_acc_r = float(np.mean(np.abs(acc_r)))
+
+    timing_l   = float(peak_f_l) / max(T-1,1)
+    timing_r   = float(peak_f_r) / max(T-1,1)
+    wrist_sync = float(abs(timing_l - timing_r))
+    elbow_at_peak_l = float(elbow_l[peak_f_l, 0])
+    elbow_at_peak_r = float(elbow_r[peak_f_r, 0])
+
+    hip_mid_x = (norm[:, 23, 0] + norm[:, 24, 0]) / 2.0
+    hip_sway  = float(np.max(hip_mid_x) - np.min(hip_mid_x))
+    nose_sway = float(np.max(norm[:,0,0]) - np.min(norm[:,0,0]))
+
+    def path_linearity(traj):
+        if len(traj) < 2: return 1.0
+        steps  = np.sqrt(np.sum(np.diff(traj, axis=0)**2, axis=-1))
+        total  = float(np.sum(steps)) + 1e-6
+        direct = float(np.linalg.norm(traj[-1] - traj[0])) + 1e-6
+        return float(np.clip(direct / total, 0, 1))
+
+    linearity = path_linearity(norm[:, 15, :])
+    over_l    = float(np.mean(wrist_l_y > sho_l_y))
+    over_r    = float(np.mean(wrist_r_y > sho_r_y))
+
+    depth_feat = np.array([
+        peak_w_l, peak_w_r, rom_w_l, rom_w_r, peak_asym,
+        min_el_l, min_el_r, rom_el_l, rom_el_r, max_el_asym,
+        sho_tilt_max, sho_tilt_mean, fwd_l, fwd_r,
+        peak_vel_l, peak_vel_r, mean_acc_l, mean_acc_r,
+        timing_l, timing_r, wrist_sync,
+        elbow_at_peak_l, elbow_at_peak_r,
+        hip_sway, nose_sway, linearity, over_l, over_r,
+    ], dtype=np.float32)
+
+    pos      = norm[:, JOINT_IDX, :].reshape(T, -1)
+    vel      = np.concatenate([np.zeros_like(pos[:1]), np.diff(pos,axis=0)],axis=0)
+    acc      = np.concatenate([np.zeros_like(vel[:1]), np.diff(vel,axis=0)],axis=0)
+    seq_feat = np.concatenate(
+        [pos,vel,acc,elbow_l,elbow_r,wl,vel_l,acc_l,wr,vel_r,acc_r],axis=1
+    ).astype(np.float32)
+
+    return resample(seq_feat, target_frames), depth_feat
+
+
+def right_shoulder_angle(lm):
+    down = np.array([0.0, 1.0, 0.0], np.float32)
+    v = lm[14] - lm[12]
+    n = np.linalg.norm(v)
+    if n < 1e-6: return 0.0
+    return float(np.degrees(np.arccos(np.clip(np.dot(v / n, down), -1, 1))))
+
+
+# ══════════════════════════════════════════════════════════════════
+# DISPLAY
+# ══════════════════════════════════════════════════════════════════
+SHORT_LABELS = {
+    "front_shoulder_perfect":     "PERFECT",
+    "front_shoulder_bent_elbow":  "BENT ELBOW",
+    "front_shoulder_low":         "TOO LOW",
+    "front_shoulder_over_range":  "OVER RANGE",
+    "unknown":                    "UNKNOWN",
+}
+VOICE_LABELS = {
+    "front_shoulder_perfect":     "Perfect form!",
+    "front_shoulder_bent_elbow":  "Bent elbow. Keep arms straight.",
+    "front_shoulder_low":         "Too low. Raise arms higher.",
+    "front_shoulder_over_range":  "Over range. Don't go past shoulder level.",
+    "unknown":                    "Could not classify.",
+}
+COLORS = {
+    "front_shoulder_perfect":     (50, 200, 80),
+    "front_shoulder_bent_elbow":  (0, 100, 255),
+    "front_shoulder_low":         (0, 200, 255),
+    "front_shoulder_over_range":  (0, 60, 220),
+    "unknown":                    (120, 120, 120),
+}
+PHASE_COLORS = {
+    Phase.REST:     (0, 220, 80),    # green
+    Phase.RISING:   (0, 180, 255),   # orange
+    Phase.FALLING:  (255, 140, 0),   # blue-ish
+    Phase.COOLDOWN: (0, 200, 200),   # yellow
+}
+
+
+# ══════════════════════════════════════════════════════════════════
+# MAIN
+# ══════════════════════════════════════════════════════════════════
+def main(model_path, labels_path, camera_id):
+
+    label_names = ["front_shoulder_bent_elbow", "front_shoulder_low",
+                   "front_shoulder_over_range", "front_shoulder_perfect"]
+    try:
+        with open(labels_path) as f:
+            lines = [l.strip() for l in f if l.strip()]
+            if lines:
+                label_names = [l.split(",",1)[1].strip() if "," in l
+                               else l for l in lines]
+    except FileNotFoundError:
+        pass
+    print(f"Labels: {label_names}")
+
+    # ── Classifier ─────────────────────────────────────────────────
+    try:
+        interp = Interpreter(model_path=model_path, num_threads=4)
+    except TypeError:
+        interp = Interpreter(model_path=model_path)
+    interp.allocate_tensors()
+    inp = interp.get_input_details()
+    out = interp.get_output_details()
+
+    TARGET_FRAMES = 48
+    for d in inp:
+        if len(d["shape"]) == 3:
+            TARGET_FRAMES = int(d["shape"][1]); break
+
+    LATENT_DIM = 8
+    for d in inp:
+        if len(d["shape"]) == 2 and d["shape"][-1] <= 16:
+            LATENT_DIM = int(d["shape"][-1]); break
+    print(f"TARGET_FRAMES={TARGET_FRAMES}  LATENT_DIM={LATENT_DIM}")
+
+    # ── VAE (for z fusion only — NO rejection) ────────────────────
+    vae_interp = None; vae_inp = None; vae_out_det = None
+    vae_sc_mean = None; vae_sc_scale = None
+
+    base_dir = os.path.dirname(model_path)
+
+    _vae_path = os.path.join(base_dir, "front_shoulder_vae_encoder.tflite")
+    if os.path.exists(_vae_path):
+        try:
+            vae_interp = Interpreter(model_path=_vae_path, num_threads=2)
+            vae_interp.allocate_tensors()
+            vae_inp     = vae_interp.get_input_details()
+            vae_out_det = vae_interp.get_output_details()
+            print(f"VAE loaded (z fusion only, no rejection)")
+        except Exception as e:
+            print(f"VAE load failed: {e}"); vae_interp = None
+
+    _stats_path = os.path.join(base_dir,
+                               "best_front_shoulder_model_feature_stats.npz")
+    if os.path.exists(_stats_path):
+        try:
+            _st = np.load(_stats_path, allow_pickle=True)
+            if "vae_scaler_mean" in _st:
+                vae_sc_mean  = _st["vae_scaler_mean"].astype(np.float32)
+                vae_sc_scale = _st["vae_scaler_scale"].astype(np.float32)
+            if "target_frames" in _st:
+                tf_saved = int(_st["target_frames"][0])
+                if tf_saved != TARGET_FRAMES:
+                    print(f"  Override TARGET_FRAMES -> {tf_saved}")
+                    TARGET_FRAMES = tf_saved
+        except Exception as e:
+            print(f"Stats load failed: {e}")
+
+    def run_vae_z(depth_feat):
+        """Get VAE latent z for classifier fusion. Never rejects."""
+        if vae_interp is None or vae_sc_mean is None:
+            return np.zeros(LATENT_DIM, np.float32)
+        n = min(len(depth_feat), len(vae_sc_mean))
+        x = ((depth_feat[:n] - vae_sc_mean[:n]) /
+             (vae_sc_scale[:n] + 1e-6)).reshape(1,-1).astype(np.float32)
+        vae_interp.set_tensor(vae_inp[0]["index"], x)
+        vae_interp.invoke()
+        # Get mu (mean) — deterministic, stable
+        mu_t = None
+        for d in vae_out_det:
+            nm = d["name"].lower()
+            if "mu" in nm or ("mean" in nm and "log" not in nm):
+                mu_t = vae_interp.get_tensor(d["index"])[0]
+                break
+        if mu_t is None:
+            mu_t = vae_interp.get_tensor(vae_out_det[0]["index"])[0]
+        return mu_t.astype(np.float32)
+
+    def run_model(seq_feat, depth_feat, z_vec):
+        for d in inp:
+            nm = d["name"].lower()
+            if len(d["shape"]) == 3:
+                interp.set_tensor(d["index"],
+                    seq_feat[np.newaxis].astype(np.float32))
+            elif "latent" in nm or "z" in nm:
+                interp.set_tensor(d["index"],
+                    z_vec[np.newaxis].astype(np.float32))
+            else:
+                n = int(d["shape"][-1])
+                interp.set_tensor(d["index"],
+                    depth_feat[:n][np.newaxis].astype(np.float32))
+        interp.invoke()
+        return interp.get_tensor(out[0]["index"])[0].astype(np.float32)
+
+    # ── MediaPipe ──────────────────────────────────────────────────
+    mp_pose    = mp.solutions.pose
+    mp_drawing = mp.solutions.drawing_utils
+    pose = mp_pose.Pose(min_detection_confidence=0.5,
+                        min_tracking_confidence=0.5)
+
+    cap = cv2.VideoCapture(camera_id)
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+
+    # ── Init ───────────────────────────────────────────────────────
+    voice = VoiceFeedback(enabled=VOICE_ENABLED,
+                          rate=VOICE_RATE, volume=VOICE_VOLUME)
+    sm    = SmoothRepDetector()
+
+    rep_count     = 0
+    last_label    = "---"
+    last_conf     = 0.0
+    r_sho_angle   = 0.0
+    flash_timer   = 0
+    flash_color   = (0,0,0)
+    history       = collections.deque(maxlen=10)
+    set_results   = []
+
+    voice.say("Front shoulder raise. Raise arms when ready.", priority=True)
+
+    print("\n" + "="*55)
+    print("  SMOOTH VELOCITY-BASED REP DETECTION")
+    print("  No hard thresholds. No OOD rejection.")
+    print("  Q/ESC=quit  R=reset  S=set summary")
+    print("="*55 + "\n")
+
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            break
+        frame = cv2.flip(frame, 1)
+        rgb   = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        res   = pose.process(rgb)
+        H, W  = frame.shape[:2]
+
+        if res.pose_landmarks:
+            lms = res.pose_landmarks.landmark
+            lm  = np.array([[l.x, l.y, l.z] for l in lms], dtype=np.float32)
+            r_sho_angle = right_shoulder_angle(lm)
+
+            # ── State Machine ──────────────────────────────────────
+            result = sm.update(lm, r_sho_angle)
+
+            # Check result type safely (avoids numpy ambiguity)
+            if isinstance(result, str):
+                if result == "timeout":
+                    voice.say("Timeout. Try again.")
+                # "false_start" is silent — just resets
+
+            elif result is not None:
+                # ── FULL REP CAPTURED → classify ───────────────────
+                n_frames = len(result)
+                print(f"  Classifying {n_frames} frames...")
+
+                seq, dep = process_rep(result, TARGET_FRAMES)
+
+                # Get VAE z (for fusion, never rejects)
+                z_vec = run_vae_z(dep)
+
+                # Classify
+                probs = run_model(seq, dep, z_vec)
+                i_max = int(np.argmax(probs))
+                conf  = float(probs[i_max])
+                last_label = (label_names[i_max]
+                              if i_max < len(label_names) else str(i_max))
+                last_conf = conf
+                rep_count += 1
+
+                short = SHORT_LABELS.get(last_label.lower(), last_label)
+                vtxt  = VOICE_LABELS.get(last_label.lower(), short)
+                voice.say(f"Rep {rep_count}. {vtxt}", priority=True)
+
+                print(f"  -> Rep #{rep_count}: {last_label} ({conf*100:.1f}%)")
+
+                flash_color = COLORS.get(last_label.lower(), (100,100,100))
+                flash_timer = 25
+                history.appendleft((last_label, conf))
+                set_results.append((last_label, conf))
+
+            # ── Skeleton ───────────────────────────────────────────
+            mp_drawing.draw_landmarks(
+                frame, res.pose_landmarks, mp_pose.POSE_CONNECTIONS,
+                mp_drawing.DrawingSpec(color=(180,180,180),
+                                       thickness=1, circle_radius=2),
+                mp_drawing.DrawingSpec(color=(80,80,80), thickness=1))
+
+            # Right arm colored by phase
+            pcol = PHASE_COLORS.get(sm.phase, (180,180,180))
+            for si, ei in [(12,14), (14,16)]:
+                cv2.line(frame,
+                         (int(lm[si,0]*W), int(lm[si,1]*H)),
+                         (int(lm[ei,0]*W), int(lm[ei,1]*H)),
+                         pcol, 4)
+            for si, ei in [(11,13), (13,15)]:
+                cv2.line(frame,
+                         (int(lm[si,0]*W), int(lm[si,1]*H)),
+                         (int(lm[ei,0]*W), int(lm[ei,1]*H)),
+                         (180,180,180), 2)
+
+            # Angle on shoulder
+            rs = (int(lm[12,0]*W), int(lm[12,1]*H))
+            cv2.putText(frame, f"{r_sho_angle:.0f}",
+                        (rs[0]+10, rs[1]-12),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.55, pcol, 2)
+
+        # ── FLASH ──────────────────────────────────────────────────
+        if flash_timer > 0:
+            overlay = frame.copy()
+            alpha   = min(0.22, flash_timer / 50.0)
+            cv2.rectangle(overlay, (0,0), (W,H), flash_color, -1)
+            cv2.addWeighted(overlay, alpha, frame, 1-alpha, 0, frame)
+            flash_timer -= 1
+
+        # ── VELOCITY BAR (left side) ───────────────────────────────
+        # Shows motion direction: green=up, red=down, gray=still
+        bar_x, bar_y, bar_w, bar_h = 15, 80, 18, 140
+        bar_mid = bar_y + bar_h // 2
+
+        # Background
+        cv2.rectangle(frame, (bar_x, bar_y), (bar_x+bar_w, bar_y+bar_h),
+                      (40,40,40), -1)
+        cv2.line(frame, (bar_x, bar_mid), (bar_x+bar_w, bar_mid),
+                 (100,100,100), 1)
+
+        # Velocity fill (clamped)
+        vel_px = int(np.clip(sm.s_vel * 30, -bar_h//2, bar_h//2))
+        if vel_px > 2:
+            cv2.rectangle(frame, (bar_x+2, bar_mid-vel_px),
+                          (bar_x+bar_w-2, bar_mid), (0,220,80), -1)
+        elif vel_px < -2:
+            cv2.rectangle(frame, (bar_x+2, bar_mid),
+                          (bar_x+bar_w-2, bar_mid-vel_px), (0,100,255), -1)
+
+        cv2.putText(frame, "VEL", (bar_x, bar_y-5),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.3, (150,150,150), 1)
+
+        # ── RISE METER (next to velocity bar) ──────────────────────
+        rise_x = bar_x + bar_w + 10
+        rise_max_display = 80.0  # degrees for full bar
+        rise_fill = np.clip(sm.rise_amount / rise_max_display, 0, 1)
+
+        cv2.rectangle(frame, (rise_x, bar_y), (rise_x+bar_w, bar_y+bar_h),
+                      (40,40,40), -1)
+
+        fill_h = int(rise_fill * bar_h)
+        if fill_h > 0:
+            rise_col = PHASE_COLORS.get(sm.phase, (180,180,180))
+            cv2.rectangle(frame, (rise_x+2, bar_y+bar_h-fill_h),
+                          (rise_x+bar_w-2, bar_y+bar_h), rise_col, -1)
+
+        cv2.putText(frame, "RISE", (rise_x-2, bar_y-5),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.3, (150,150,150), 1)
+
+        # ── RETURN METER (during falling) ──────────────────────────
+        if sm.phase == Phase.FALLING:
+            ret_x = rise_x + bar_w + 10
+            ret_fill = 1.0 - np.clip(sm.return_pct, 0, 1)
+            cv2.rectangle(frame, (ret_x, bar_y), (ret_x+bar_w, bar_y+bar_h),
+                          (40,40,40), -1)
+            rh = int(ret_fill * bar_h)
+            if rh > 0:
+                cv2.rectangle(frame, (ret_x+2, bar_y+bar_h-rh),
+                              (ret_x+bar_w-2, bar_y+bar_h), (255,140,0), -1)
+            cv2.putText(frame, "RET", (ret_x-2, bar_y-5),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.3, (150,150,150), 1)
+
+        # ── PHASE INDICATOR ────────────────────────────────────────
+        pcol = PHASE_COLORS.get(sm.phase, (180,180,180))
+        phase_txt = sm.phase.value
+        if sm.phase == Phase.RISING:
+            cv2.circle(frame, (W//2, 25), 8, (0,0,255), -1)
+            phase_txt += f"  {len(sm.rec_buffer)}f"
+        elif sm.phase == Phase.FALLING:
+            cv2.circle(frame, (W//2, 25), 8, (255,140,0), -1)
+            phase_txt += f"  {sm.return_pct:.0%} left"
+
+        cv2.putText(frame, phase_txt, (W//2 + 15, 30),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, pcol, 2)
+
+        # ── REPS + RESULT ──────────────────────────────────────────
+        cv2.putText(frame, f"REPS: {rep_count}",
+                    (20, H-55),
+                    cv2.FONT_HERSHEY_SIMPLEX, 1.2, (255,255,255), 3)
+
+        col  = COLORS.get(last_label.lower(), (180,180,180))
+        disp = SHORT_LABELS.get(last_label.lower(), last_label.upper())
+        cv2.putText(frame, f"{disp}  {last_conf*100:.0f}%",
+                    (20, H-15),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.85, col, 2)
+
+        # History
+        for i, (hl, hc) in enumerate(history):
+            d = SHORT_LABELS.get(hl.lower(), hl)
+            c = COLORS.get(hl.lower(), (180,180,180))
+            cv2.putText(frame, f"{i+1}. {d} {hc*100:.0f}%",
+                        (W-220, 55+i*22),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.38, c, 1)
+
+        # Debug line
+        rest_s = f"rest={sm.rest_angle:.1f}" if sm.rest_angle else "calibrating"
+        cv2.putText(frame,
+                    f"ang={sm.s_angle:.1f}  vel={sm.s_vel:+.2f}  "
+                                        f"rise={sm.rise_amount:.1f}  {rest_s}  {sm.phase.value}",
+                    (20, H-80),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.32, (110,110,110), 1)
+
+        # ── KEY HANDLING ───────────────────────────────────────────
+        cv2.imshow("Front Shoulder Classifier", frame)
+        key = cv2.waitKey(1) & 0xFF
+
+        if key in (ord("q"), 27):
+            break
+
+        if key in (ord("r"), ord("R")):
+            sm.reset()
+            rep_count = 0; history.clear(); set_results.clear()
+            last_label = "---"; last_conf = 0.0
+            flash_timer = 0; r_sho_angle = 0.0
+            voice.say("Reset. Ready for new set.", priority=True)
+            print("Reset.")
+
+        if key in (ord("s"), ord("S")):
+            if set_results:
+                print("\n--- SET SUMMARY ---")
+                counts = {}
+                for lb, cf in set_results:
+                    sn = SHORT_LABELS.get(lb.lower(), lb)
+                    counts[sn] = counts.get(sn, 0) + 1
+                for lb, ct in counts.items():
+                    print(f"  {lb}: {ct}")
+                total = len(set_results)
+                perfect = sum(1 for lb, _ in set_results
+                              if "perfect" in lb.lower())
+                pct = perfect / total * 100 if total else 0
+                print(f"  Total: {total} reps  ({pct:.0f}% perfect)")
+                print("-------------------\n")
+                voice.say(f"Set complete. {total} reps. "
+                          f"{pct:.0f} percent perfect.", priority=True)
+
+            sm.reset()
+            rep_count = 0; history.clear(); set_results.clear()
+            last_label = "---"; last_conf = 0.0
+            flash_timer = 0
+            voice.say("New set. Go when ready.", priority=True)
+            print("New set started.")
+
+    # ── Cleanup ────────────────────────────────────────────────────
+    if set_results:
+        print("\n--- FINAL SUMMARY ---")
+        counts = {}
+        for lb, cf in set_results:
+            sn = SHORT_LABELS.get(lb.lower(), lb)
+            counts[sn] = counts.get(sn, 0) + 1
+        for lb, ct in counts.items():
+            print(f"  {lb}: {ct}")
+        total = len(set_results)
+        perfect = sum(1 for lb, _ in set_results if "perfect" in lb.lower())
+        pct = perfect / total * 100 if total else 0
+        print(f"  Total: {total} reps  ({pct:.0f}% perfect)")
+        print("---------------------")
+
+    cap.release()
+    cv2.destroyAllWindows()
+    pose.close()
+    print("Done.")
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--model",
+        default=r"D:\AI-Powered-Fitness-Coach\AI Workout\front_shoulder\front_shoulder_classifier_fp16.tflite")
+    parser.add_argument("--labels",
+        default=r"D:\AI-Powered-Fitness-Coach\AI Workout\front_shoulder\front_shoulder_label_classes.txt")
+    parser.add_argument("--camera", type=int, default=1)
+    args = parser.parse_args()
+    main(args.model, args.labels, args.camera)

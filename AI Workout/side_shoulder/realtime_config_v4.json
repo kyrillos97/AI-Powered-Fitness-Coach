@@ -1,0 +1,390 @@
+{
+  "mode": "angles_v4",
+  "version": "v4.1",
+  "T": 68,
+  "input_dim": 12,
+  "n_angles": 6,
+  "angle_names": [
+    "R_sho_abd",
+    "L_sho_abd",
+    "R_elb_flex",
+    "L_elb_flex",
+    "torso_lean",
+    "hip_flex"
+  ],
+  "n_landmarks": 33,
+  "raw_keypoint_dim": 132,
+  "raw_kp_columns_order": [
+    "x0",
+    "y0",
+    "z0",
+    "v0",
+    "x1",
+    "y1",
+    "z1",
+    "v1",
+    "x2",
+    "y2",
+    "z2",
+    "v2",
+    "x3",
+    "y3",
+    "z3",
+    "v3",
+    "x4",
+    "y4",
+    "z4",
+    "v4",
+    "x5",
+    "y5",
+    "z5",
+    "v5",
+    "x6",
+    "y6",
+    "z6",
+    "v6",
+    "x7",
+    "y7",
+    "z7",
+    "v7",
+    "x8",
+    "y8",
+    "z8",
+    "v8",
+    "x9",
+    "y9",
+    "z9",
+    "v9",
+    "x10",
+    "y10",
+    "z10",
+    "v10",
+    "x11",
+    "y11",
+    "z11",
+    "v11",
+    "x12",
+    "y12",
+    "z12",
+    "v12",
+    "x13",
+    "y13",
+    "z13",
+    "v13",
+    "x14",
+    "y14",
+    "z14",
+    "v14",
+    "x15",
+    "y15",
+    "z15",
+    "v15",
+    "x16",
+    "y16",
+    "z16",
+    "v16",
+    "x17",
+    "y17",
+    "z17",
+    "v17",
+    "x18",
+    "y18",
+    "z18",
+    "v18",
+    "x19",
+    "y19",
+    "z19",
+    "v19",
+    "x20",
+    "y20",
+    "z20",
+    "v20",
+    "x21",
+    "y21",
+    "z21",
+    "v21",
+    "x22",
+    "y22",
+    "z22",
+    "v22",
+    "x23",
+    "y23",
+    "z23",
+    "v23",
+    "x24",
+    "y24",
+    "z24",
+    "v24",
+    "x25",
+    "y25",
+    "z25",
+    "v25",
+    "x26",
+    "y26",
+    "z26",
+    "v26",
+    "x27",
+    "y27",
+    "z27",
+    "v27",
+    "x28",
+    "y28",
+    "z28",
+    "v28",
+    "x29",
+    "y29",
+    "z29",
+    "v29",
+    "x30",
+    "y30",
+    "z30",
+    "v30",
+    "x31",
+    "y31",
+    "z31",
+    "v31",
+    "x32",
+    "y32",
+    "z32",
+    "v32"
+  ],
+  "channel_layout": {
+    "angles": [
+      0,
+      6
+    ],
+    "velocities": [
+      6,
+      12
+    ]
+  },
+  "latent_dim": 8,
+  "batch_size": 1,
+  "label_map": {
+    "Lower_Range": 0,
+    "Perfect": 1,
+    "Over_Range": 2
+  },
+  "inv_label_map": {
+    "0": "Lower_Range",
+    "1": "Perfect",
+    "2": "Over_Range"
+  },
+  "x_mean": [
+    45.0,
+    45.0,
+    90.0,
+    90.0,
+    0.0,
+    170.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0
+  ],
+  "x_std": [
+    60.0,
+    60.0,
+    60.0,
+    60.0,
+    30.0,
+    20.0,
+    15.0,
+    15.0,
+    15.0,
+    15.0,
+    15.0,
+    15.0
+  ],
+  "clip_range": 5.0,
+  "ood_recon_threshold": 246.20388793945312,
+  "ood_mahalanobis_threshold": 27.796836853027344,
+  "ood_motion_threshold": 0.17285190522670746,
+  "latent_mean": [
+    -0.07459314167499542,
+    0.010597409680485725,
+    0.000268112140474841,
+    -0.1903061866760254,
+    0.028222715482115746,
+    0.1445944607257843,
+    0.07380688935518265,
+    0.06852179020643234
+  ],
+  "latent_inv_cov": [
+    [
+      33.05168914794922,
+      -1.8422698974609375,
+      -21.87558937072754,
+      -0.379876971244812,
+      2.3893375396728516,
+      -0.45033925771713257,
+      -7.8813300132751465,
+      10.969640731811523
+    ],
+    [
+      -1.8422698974609375,
+      1.328257441520691,
+      1.3309104442596436,
+      0.12990112602710724,
+      -0.044538527727127075,
+      -0.3022947609424591,
+      -0.05502243712544441,
+      -0.5220867991447449
+    ],
+    [
+      -21.87558937072754,
+      1.3309104442596436,
+      31.81179428100586,
+      1.8367695808410645,
+      -3.8237454891204834,
+      0.9300038814544678,
+      7.477300643920898,
+      -10.96093463897705
+    ],
+    [
+      -0.379876971244812,
+      0.12990112602710724,
+      1.8367695808410645,
+      1.0137473344802856,
+      -0.27745285630226135,
+      0.31506258249282837,
+      0.20867948234081268,
+      -0.6184301972389221
+    ],
+    [
+      2.3893375396728516,
+      -0.044538527727127075,
+      -3.8237454891204834,
+      -0.27745285630226135,
+      1.558315634727478,
+      0.07903016358613968,
+      -0.9029139876365662,
+      1.3234823942184448
+    ],
+    [
+      -0.45033925771713257,
+      -0.3022947609424591,
+      0.9300038814544678,
+      0.31506258249282837,
+      0.07903016358613968,
+      2.093743085861206,
+      0.07409738004207611,
+      -0.969663679599762
+    ],
+    [
+      -7.8813300132751465,
+      -0.05502243712544441,
+      7.477300643920898,
+      0.20867948234081268,
+      -0.9029139876365662,
+      0.07409738004207611,
+      4.808189868927002,
+      -3.018420934677124
+    ],
+    [
+      10.969640731811523,
+      -0.5220867991447449,
+      -10.96093463897705,
+      -0.6184301972389221,
+      1.3234823942184448,
+      -0.969663679599762,
+      -3.018420934677124,
+      6.021658897399902
+    ]
+  ],
+  "angle_definitions": {
+    "R_sho_abd": {
+      "vertex": 12,
+      "ends": [
+        24,
+        14
+      ],
+      "uses_3d": true,
+      "desc": "Right shoulder abduction: hip(24) -> shoulder(12) -> elbow(14)"
+    },
+    "L_sho_abd": {
+      "vertex": 11,
+      "ends": [
+        23,
+        13
+      ],
+      "uses_3d": true,
+      "desc": "Left shoulder abduction: hip(23) -> shoulder(11) -> elbow(13)"
+    },
+    "R_elb_flex": {
+      "vertex": 14,
+      "ends": [
+        12,
+        16
+      ],
+      "uses_3d": true,
+      "desc": "Right elbow flexion: shoulder(12) -> elbow(14) -> wrist(16)"
+    },
+    "L_elb_flex": {
+      "vertex": 13,
+      "ends": [
+        11,
+        15
+      ],
+      "uses_3d": true,
+      "desc": "Left elbow flexion: shoulder(11) -> elbow(13) -> wrist(15)"
+    },
+    "torso_lean": {
+      "type": "signed_2d_vs_vertical",
+      "hip_landmarks": [
+        23,
+        24
+      ],
+      "shoulder_landmarks": [
+        11,
+        12
+      ],
+      "formula": "degrees(atan2(dx, -dy)) of (hip_mid -> shoulder_mid) in 2D image space",
+      "desc": "Torso lean angle vs vertical, signed (right positive)"
+    },
+    "hip_flex": {
+      "type": "midpoint_3pt",
+      "hip_landmarks": [
+        23,
+        24
+      ],
+      "shoulder_landmarks": [
+        11,
+        12
+      ],
+      "knee_landmarks": [
+        25,
+        26
+      ],
+      "uses_3d": true,
+      "desc": "shoulder_mid -> hip_mid -> knee_mid"
+    }
+  },
+  "preprocessing_steps": [
+    "Buffer one rep using shoulder-abduction state machine.",
+    "Resample buffered raw keypoints to T=68 via linear interpolation.",
+    "Compute 6 joint angles per frame -> (T, 6).",
+    "Append centered angular velocity -> (T, 12) = [angles | velocities].",
+    "Standardize: x = (x - x_mean) / x_std.",
+    "Clip to [-5.0, 5.0].",
+    "Run full_pipeline_v4.tflite -> probs(3), recon(1), mahalanobis(1), motion_range(1), ood_flag(1).",
+    "If ood_flag == 1 -> NOT_WORKOUT, else argmax(probs)."
+  ],
+  "ood_policy": {
+    "rule": "OOD if (recon > rec_thr) OR (mahalanobis > mh_thr) OR (motion_range < motion_thr)",
+    "rationale": "Triple-gate. (1) Recon catches structurally-impossible inputs the VAE cannot reproduce. (2) Mahalanobis catches inputs whose latent code falls outside the training cloud (handles 'looks plausible but isn't from this distribution'). (3) Motion-range catches idle/squat/static poses where the shoulders barely move \u2014 the VAE happily reconstructs these because they resemble the resting frames at the start/end of training reps, but they aren't actual workout reps.",
+    "motion_range_definition": "min over (R_sho_abd, L_sho_abd) channels of (max - min over time) on standardized input. A real two-arm raise has motion_range >> 0 in both shoulder channels; idle/single-arm/squat does not.",
+    "thresholds_calibration": {
+      "recon": "max(train, val) recon p99 \u00d7 1.5",
+      "mahalanobis": "max(train, val) mahalanobis p99 \u00d7 1.3",
+      "motion": "max(train p1, val min) \u00d7 0.5  (outlier-robust)"
+    }
+  },
+  "model_files": {
+    "full_pipeline": "full_pipeline_v4.tflite"
+  },
+  "tf_version": "2.19.0",
+  "trained_at": "2026-05-02 10:51:59"
+}
