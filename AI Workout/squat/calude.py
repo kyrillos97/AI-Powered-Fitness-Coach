@@ -52,8 +52,8 @@ except ImportError:
 # ═══════════════════════════════════════════════════════════════════════════
 # CONFIG  — edit to match your setup
 # ═══════════════════════════════════════════════════════════════════════════
-DEFAULT_MODEL       = r"D:\GD project\New folder\squat_classifier_fp16.tflite"
-DEFAULT_LABELS      = r"D:\GD project\New folder\label_classes.txt"
+DEFAULT_MODEL       = r"squat_classifier_fp16.tflite"
+DEFAULT_LABELS      = r"label_classes.txt"
 DEFAULT_CAMERA      = 1
 
 TARGET_FRAMES       = 64

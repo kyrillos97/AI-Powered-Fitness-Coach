@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Fitwise API Tester</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; padding: 20px; background: #121212; color: white; display: flex; gap: 20px; }
+        .panel { background: #1e1e1e; border-radius: 8px; padding: 20px; flex: 1; display: flex; flex-direction: column;}
+        button { background: #00FFC2; color: #000; border: none; padding: 10px 15px; border-radius: 4px; cursor: pointer; font-weight: bold; margin-bottom: 10px;}
+        button:hover { background: #00cca0; }
+        input, select { padding: 8px; margin-bottom: 10px; border-radius: 4px; border: 1px solid #333; background: #2a2a2a; color: white;}
+        #log { flex: 1; background: #000; color: #0f0; border-radius: 4px; padding: 10px; overflow-y: auto; font-family: monospace; height: 400px;}
+        .hud { font-size: 2em; text-align: center; margin: 20px 0; font-weight: bold; color: #00FFC2; }
+    </style>
+</head>
+</head>
+<body>
+    <div id="protocolWarning" style="display: none; background: #ff4444; color: white; padding: 15px; margin-bottom: 20px; border-radius: 8px; text-align: center; font-weight: bold;">
+        ⚠️ WARNING: You opened this file directly or via 127.0.0.1. Your browser might block microphone permissions or cause network errors.<br>
+        To fix this, please open this EXACT link instead: <a href="http://localhost:8000/client" style="color: white; text-decoration: underline;">http://localhost:8000/client</a>
+    </div>
+
+    <div class="panel">
+        <h2>🛠️ Backend Controls</h2>
+        
+        <label>User Name:</label>
+        <input type="text" id="username" value="Demo Tester">
+
+        <label>Select Workout:</label>
+        <select id="workout">
+            <option value="bicep_curl">Bicep Curl</option>
+            <option value="front_shoulder">Front Shoulder Raise</option>
+            <option value="shrug">Shrugs</option>
+            <option value="side_shoulder">Side Shoulder Raise</option>
+            <option value="squat">Squat</option>
+        </select>
+
+        <button onclick="startSession()">▶️ Start Workout Session</button>
+        <hr style="border-color: #333; width: 100%; margin: 15px 0;">
+
+        <h3>🎙️ Voice Command Simulator</h3>
+        <div style="display: flex; gap: 10px;">
+            <input type="text" id="voiceCmd" placeholder="e.g. stop session, pause, resume" style="flex: 1;">
+            <button onclick="sendVoiceCommand()" style="background: #ff5555; color: white;">Send Text Command</button>
+            <button id="listenBtn" onclick="toggleListening()" style="background: #007bff; color: white;">🎤 Start Listening</button>
+        </div>
+    </div>
+
+    <div class="panel" style="flex: 2;">
+        <h2>📱 Flutter App Simulation</h2>
+        <div class="hud" id="hud">Reps: 0 | State: IDLE</div>
+        <div id="audioCue" style="text-align: center; margin-bottom: 15px; font-style: italic; color: #aaa; min-height: 24px;"></div>
+        
+        <div id="log"></div>
+    </div>
+
+    <script>
+        // Protocol check - Localhost is required for Web Speech API to work reliably without network errors/permission loops
+        if (window.location.protocol === 'file:' || window.location.hostname === '127.0.0.1') {
+            document.getElementById('protocolWarning').style.display = 'block';
+        }
+
+        let ws = null;
+        let sessionId = null;
+        let voiceSynth = window.speechSynthesis;
+        let recognition = null;
+        let isListening = false;
+        let isTalking = false;
+
+        function playAudioCue(cue) {
+            document.getElementById("audioCue").innerText = `🔊 TTS: "${cue}"`;
+            
+            // PRIORITY OVERRIDE: Instantly interrupt any currently playing speech!
+            voiceSynth.cancel();
+            
+            let u = new SpeechSynthesisUtterance(cue);
+            u.onstart = () => {
+                isTalking = true;
+                // Temporarily pause the mic so the bot doesn't hear itself!
+                if (isListening && recognition) {
+                    try { recognition.abort(); } catch(e) {}
+                }
+            };
+            u.onend = () => {
+                isTalking = false;
+                // Resume listening after the bot is done
+                if (isListening && recognition) {
+                    setTimeout(() => {
+                        if (isListening && !isTalking && !voiceSynth.speaking) {
+                            try { recognition.start(); } catch(e) {}
+                        }
+                    }, 300);
+                }
+            };
+            voiceSynth.speak(u);
+        }
+
+        // Initialize Web Speech API
+        if ('webkitSpeechRecognition' in window) {
+            recognition = new webkitSpeechRecognition();
+            recognition.continuous = true;
+            recognition.interimResults = false;
+            
+            recognition.onresult = function(event) {
+                // Get the final transcript if available, or latest interim
+                let command = "";
+                for (let i = event.resultIndex; i < event.results.length; ++i) {
+                    if (event.results[i].isFinal) {
+                        command += event.results[i][0].transcript;
+                    }
+                }
+                command = command.trim().toLowerCase();
+                
+                if (isTalking) {
+                    return; // Bot is speaking, ignore microphone to prevent echo loops
+                }
+                
+                if (command) {
+                    log(`👂 Heard voice command: "${command}"`);
+                    
+                    // If the user speaks, interrupt the bot instantly!
+                    if (voiceSynth.speaking) {
+                        voiceSynth.cancel();
+                    }
+                    
+                    document.getElementById("voiceCmd").value = command;
+                    sendVoiceCommand(command);
+                }
+            };
+            
+            recognition.onerror = function(event) {
+                log(`❌ Speech Recognition Error: ${event.error}`);
+                if (event.error === 'not-allowed') {
+                    isListening = false;
+                    document.getElementById("listenBtn").innerText = "🎤 Start Listening";
+                }
+                if (event.error === 'network') {
+                    // Network errors usually mean the browser is rate-limiting or the connection is insecure.
+                    // We must STOP listening to prevent a catastrophic lag loop.
+                    isListening = false;
+                    document.getElementById("listenBtn").innerText = "🎤 Start Listening (Network Error)";
+                    log(`⚠️ Network error detected. Auto-restart disabled to prevent freezing. Make sure you are using http://localhost:8000/client.`);
+                }
+            };
+            
+            recognition.onend = function() {
+                if (isListening && !isTalking) {
+                    // Auto-restart if we didn't explicitly stop. Use timeout to prevent tight loop and constant permission prompts.
+                    setTimeout(() => {
+                        if (isListening && !isTalking && !voiceSynth.speaking) {
+                            try { recognition.start(); } catch(e) {}
+                        }
+                    }, 500);
+                } else if (!isListening) {
+                    log(`🛑 Stopped listening for voice commands.`);
+                }
+            };
+        } else {
+            log("⚠️ Web Speech API not supported in this browser. Please use Chrome for voice commands.");
+        }
+
+        function toggleListening() {
+            if (!recognition) return alert("Browser does not support voice recognition.");
+            const btn = document.getElementById("listenBtn");
+            
+            if (isListening) {
+                isListening = false;
+                recognition.stop();
+                btn.innerText = "🎤 Start Listening";
+                btn.style.background = "#007bff";
+                log("🛑 Stopped listening for voice commands.");
+            } else {
+                isListening = true;
+                recognition.start();
+                btn.innerText = "🛑 Stop Listening";
+                btn.style.background = "#ff5555";
+                log("🎙️ Listening for voice commands... (Say 'skip rest', 'pause', etc.)");
+            }
+        }
+
+        function log(msg) {
+            const l = document.getElementById("log");
+            l.insertAdjacentHTML("beforeend", `<div>[${new Date().toLocaleTimeString()}] ${msg}</div>`);
+            l.scrollTop = l.scrollHeight;
+        }
+
+        async function startSession() {
+            log("Sending Start Session request...");
+            
+            // Dummy 128-dim array for embedding
+            const embedding = Array.from({length: 128}, () => Math.random());
+
+            const req = {
+                user_name: document.getElementById("username").value,
+                workout_type: document.getElementById("workout").value,
+                face_embedding: embedding,
+                target_sets: 3,
+                target_reps_per_set: 5
+            };
+
+            try {
+                const res = await fetch("http://127.0.0.1:8000/session/start", {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(req)
+                });
+                
+                const data = await res.json();
+                
+                if (data.session_id) {
+                    sessionId = data.session_id;
+                    log(`✅ Session Created! ID: ${sessionId}`);
+                    connectWebSocket();
+                } else {
+                    log(`❌ Error: ${JSON.stringify(data)}`);
+                }
+            } catch (e) {
+                log(`❌ Fetch failed. Is the FastAPI server running on port 8000?`);
+            }
+        }
+
+        function connectWebSocket() {
+            if (ws) ws.close();
+            
+            ws = new WebSocket(`ws://127.0.0.1:8000/workout/${sessionId}/stream`);
+            
+            ws.onopen = () => log("🔗 WebSocket Connected! Receiving live frames...");
+            ws.onerror = (e) => log("❌ WebSocket Error");
+            ws.onclose = () => log("🔌 WebSocket Closed");
+            
+            ws.onmessage = (e) => {
+                const data = JSON.parse(e.data);
+                if (data.state === "completed") {
+                    log("🏁 Workout completed signal received.");
+                    ws.close();
+                    return;
+                }
+
+                // Update HUD
+                document.getElementById("hud").innerText = `Set: ${data.current_set} | Reps: ${data.rep_count} | State: ${data.state.toUpperCase()}`;
+                
+                if (data.audio_cue) {
+                    log(`🔊 Audio Cue Triggered: "${data.audio_cue}"`);
+                    playAudioCue(data.audio_cue);
+                }
+
+                if (data.feedback_message) {
+                    log(`⚡ Feedback: ${data.feedback_message} (${data.feedback})`);
+                }
+            };
+        }
+
+        async function sendVoiceCommand(cmdText) {
+            const cmd = cmdText || document.getElementById("voiceCmd").value;
+            if (!cmd) return;
+            log(`🎤 Sending voice string: "${cmd}"`);
+
+            try {
+                // We send everything to the global endpoint. The backend figures out if it's a START_WORKOUT or session command.
+                const res = await fetch(`http://127.0.0.1:8000/voice/command`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({command_text: cmd})
+                });
+                
+                const data = await res.json();
+                log(`💬 Backend Voice Response: ${data.message}`);
+                
+                if (data.audio_cue) {
+                    playAudioCue(data.audio_cue);
+                }
+                
+                // If the voice command started a new workout session
+                if (data.session_id && data.workout_started) {
+                    sessionId = data.session_id;
+                    document.getElementById("workout").value = data.workout_started;
+                    connectWebSocket();
+                }
+            } catch (e) {
+                log(`❌ Voice fetch failed: ${e}`);
+            }
+        }
+    </script>
+
+</body>
+</html>

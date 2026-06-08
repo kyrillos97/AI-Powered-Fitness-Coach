@@ -1,0 +1,13 @@
+fastapi
+uvicorn[standard]
+websockets
+mediapipe
+opencv-python
+numpy
+scipy
+tensorflow
+torch
+face_recognition
+pydantic
+python-multipart
+Requests

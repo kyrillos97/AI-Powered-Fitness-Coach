@@ -1,0 +1,2 @@
+0,bent_elbow
+1,perfect
