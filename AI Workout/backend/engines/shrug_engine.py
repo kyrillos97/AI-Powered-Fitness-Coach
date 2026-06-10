@@ -191,35 +191,35 @@ class ShrugEngine(BaseWorkoutEngine):
                     self.recording = False
                     self.stop_confirm_count = 0
                     if len(self.frame_buffer) >= 8:
-                    seq, dep = process_rep(np.stack(self.frame_buffer), self.TARGET_FRAMES)
-                    
-                    is_ood = False
-                    if self.vae_interp is not None:
-                        n = min(len(dep), len(self.vae_sc_mean))
-                        x = ((dep[:n] - self.vae_sc_mean[:n]) / (self.vae_sc_scale[:n] + 1e-6)).reshape(1, -1).astype(np.float32)
-                        self.vae_interp.set_tensor(self.vae_inp[0]["index"], x)
-                        self.vae_interp.invoke()
-                        # Extract mu/logvar
-                        mu_t = self.vae_interp.get_tensor(self.vae_out_det[0]["index"])[0]
-                        lv_t = self.vae_interp.get_tensor(self.vae_out_det[1]["index"])[0]
-                        kl = float(0.5 * np.sum(np.square(mu_t) + np.exp(lv_t) - lv_t - 1.0))
-                        if kl > self.kl_threshold:
-                            is_ood = True
-                    
-                    if is_ood:
-                        feedback = FeedbackType.NOT_WORKOUT
-                    else:
-                        probs = self._predict(seq, dep)
-                        pred_idx = int(np.argmax(probs))
-                        conf = float(probs[pred_idx])
-                        label = self.labels[pred_idx].lower()
+                        seq, dep = process_rep(np.stack(self.frame_buffer), self.TARGET_FRAMES)
                         
-                        if label == "perfect":
-                            self.rep_count_internal += 1
-                            feedback = FeedbackType.PERFECT
-                        elif label == "bent_elbow":
-                            feedback = FeedbackType.BENT_ELBOW
+                        is_ood = False
+                        if self.vae_interp is not None:
+                            n = min(len(dep), len(self.vae_sc_mean))
+                            x = ((dep[:n] - self.vae_sc_mean[:n]) / (self.vae_sc_scale[:n] + 1e-6)).reshape(1, -1).astype(np.float32)
+                            self.vae_interp.set_tensor(self.vae_inp[0]["index"], x)
+                            self.vae_interp.invoke()
+                            # Extract mu/logvar
+                            mu_t = self.vae_interp.get_tensor(self.vae_out_det[0]["index"])[0]
+                            lv_t = self.vae_interp.get_tensor(self.vae_out_det[1]["index"])[0]
+                            kl = float(0.5 * np.sum(np.square(mu_t) + np.exp(lv_t) - lv_t - 1.0))
+                            if kl > self.kl_threshold:
+                                is_ood = True
+                        
+                        if is_ood:
+                            feedback = FeedbackType.NOT_WORKOUT
+                        else:
+                            probs = self._predict(seq, dep)
+                            pred_idx = int(np.argmax(probs))
+                            conf = float(probs[pred_idx])
+                            label = self.labels[pred_idx].lower()
                             
+                            if label == "perfect":
+                                self.rep_count_internal += 1
+                                feedback = FeedbackType.PERFECT
+                            elif label == "bent_elbow":
+                                feedback = FeedbackType.BENT_ELBOW
+                                
                     self.frame_buffer = []
             else:
                 self.stop_confirm_count = 0

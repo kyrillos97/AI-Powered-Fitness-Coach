@@ -8,21 +8,23 @@ import engines
 
 router = APIRouter(prefix="/session", tags=["Session"])
 
+from config import CONFIG
+from engines.bicep_curl_engine import BicepCurlEngine
+from engines.squat_engine import SquatEngine
+from engines.side_shoulder_engine import SideShoulderEngine
+from engines.shrug_engine import ShrugEngine
+from engines.front_shoulder_engine import FrontShoulderEngine
+
 def get_engine_for_workout(workout_type: WorkoutType):
     if workout_type == WorkoutType.BICEP_CURL:
-        from engines.bicep_curl_engine import BicepCurlEngine
         return BicepCurlEngine(CONFIG["MODELS"]["bicep_curl"])
     elif workout_type == WorkoutType.SQUAT:
-        from engines.squat_engine import SquatEngine
         return SquatEngine(CONFIG["MODELS"]["squat"])
     elif workout_type == WorkoutType.SIDE_SHOULDER:
-        from engines.side_shoulder_engine import SideShoulderEngine
         return SideShoulderEngine(CONFIG["MODELS"]["side_shoulder"])
     elif workout_type == WorkoutType.SHRUG:
-        from engines.shrug_engine import ShrugEngine
         return ShrugEngine(CONFIG["MODELS"]["shrug"])
     elif workout_type == WorkoutType.FRONT_SHOULDER:
-        from engines.front_shoulder_engine import FrontShoulderEngine
         return FrontShoulderEngine(CONFIG["MODELS"]["front_shoulder"])
     
     raise ValueError("Unknown workout type")

@@ -10,6 +10,11 @@ from scipy.interpolate import interp1d
 from core.feedback_engine import FeedbackType
 from .base_engine import BaseWorkoutEngine, FrameResult
 
+# ==============================================================================
+# CONFIGURATION
+# ==============================================================================
+VAE_REJECTION_THRESHOLD = 180.0  # Adjust this to make VAE stricter/looser
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # MODEL DEFINITION
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -170,9 +175,9 @@ class FrontShoulderEngine(BaseWorkoutEngine):
         self.TEMPORAL_LENGTH = self.cfg["temporal_length"]
         self.LATENT_DIM      = self.cfg["latent_dim"]
         self.HIDDEN_C        = self.cfg["hidden_channels"]
-        # Use the same fixed threshold as the original realtime script (120).
+        # Use the same fixed threshold as the original realtime script.
         # The config threshold (0.11) is the VAE training loss, NOT the rejection gate.
-        self.THRESHOLD       = 120
+        self.THRESHOLD       = VAE_REJECTION_THRESHOLD
 
         self.GLOBAL_MEAN = np.array(self.cfg["global_mean"], dtype=np.float32)
         self.GLOBAL_STD  = np.array(self.cfg["global_std"],  dtype=np.float32)
@@ -264,8 +269,8 @@ class FrontShoulderEngine(BaseWorkoutEngine):
         
         if self.state == 0: # IDLE
             self.pre_buffer.append(lm_array.copy())
-            # Start recording when entering PERFECT, or OVER (matches original script)
-            if self.current_region in (Region.PERFECT, Region.OVER):
+            # Start recording when entering LOW, PERFECT, or OVER (so we can detect partial reps!)
+            if self.current_region in (Region.LOW, Region.PERFECT, Region.OVER):
                 self.state = 1
                 self.recorded_frames = list(self.pre_buffer)
                 self.recorded_frames.append(lm_array.copy())
@@ -287,11 +292,14 @@ class FrontShoulderEngine(BaseWorkoutEngine):
                     if self.reached_perfect:
                         is_valid, error = self.validate_rep_with_vae(self.recorded_frames)
                         if is_valid:
+                            print(f"[Front Shoulder] VAE OK. Error={error:.4f} <= {self.THRESHOLD}")
                             self.rep_count_internal += 1
                             feedback = FeedbackType.PERFECT
                         else:
+                            print(f"[Front Shoulder] VAE REJECTED. Error={error:.4f} > {self.THRESHOLD}")
                             feedback = FeedbackType.REJECTED_BY_VAE
                     else:
+                        print("[Front Shoulder] Partial rep. Did not reach PERFECT.")
                         feedback = FeedbackType.LOWER_RANGE
                         
                     self.state = 0
