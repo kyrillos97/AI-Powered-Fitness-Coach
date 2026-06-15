@@ -81,7 +81,7 @@ ELBOW_BENT_SPREAD_MULT = 1.1
 
 # ── VAE OOD gate ───────────────────────────────────────────────────────────────
 VAE_ENABLED              = True
-VAE_KL_THRESHOLD_OVERRIDE = None  # set a float (e.g. 10.0) to override file value
+VAE_KL_THRESHOLD_OVERRIDE = 2.5  # set a float (e.g. 10.0) to override file value
 
 # ── Display ────────────────────────────────────────────────────────────────────
 HISTORY_MAXLEN = 5

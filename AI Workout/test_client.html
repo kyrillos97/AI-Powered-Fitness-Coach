@@ -244,7 +244,11 @@
                 }
 
                 if (data.feedback_message) {
-                    log(`⚡ Feedback: ${data.feedback_message} (${data.feedback})`);
+                    let logStr = `⚡ Feedback: ${data.feedback_message} (${data.feedback})`;
+                    if (data.details && data.details.vae_error !== undefined) {
+                        logStr += ` | VAE Error: ${data.details.vae_error.toFixed(4)} (Threshold: ${data.details.threshold})`;
+                    }
+                    log(logStr);
                 }
             };
         }

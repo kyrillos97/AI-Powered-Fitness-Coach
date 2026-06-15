@@ -10,7 +10,7 @@ CONFIG = {
     "CORS_ORIGINS": ["*"],
     
     # Camera index
-    "CAMERA_INDEX": 0,
+    "CAMERA_INDEX": 1,
     "FLIP_HORIZONTAL": True,
 
     # Face verification

@@ -62,6 +62,13 @@ class CameraManager:
             if CONFIG.get("FLIP_HORIZONTAL", True):
                 frame = cv2.flip(frame, 1)
                 
+            # Simulate 9:16 phone perspective by cropping the center
+            h, w = frame.shape[:2]
+            target_w = int(h * 9 / 16)
+            if w > target_w:
+                start_x = (w - target_w) // 2
+                frame = frame[:, start_x:start_x+target_w]
+                
             rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             rgb.flags.writeable = False
             results = self.pose.process(rgb)
@@ -135,7 +142,8 @@ class CameraManager:
                                 "rep_count": engine_result.rep_count,
                                 "feedback": engine_result.feedback,
                                 "feedback_message": session.feedback_engine.get_feedback_message(engine_result.feedback),
-                                "landmarks": lm_array
+                                "landmarks": lm_array,
+                                "details": engine_result.details
                             })
                             if audio_cue:
                                 self.last_frame_result["audio_cue"] = audio_cue

@@ -203,6 +203,7 @@ class ShrugEngine(BaseWorkoutEngine):
                             mu_t = self.vae_interp.get_tensor(self.vae_out_det[0]["index"])[0]
                             lv_t = self.vae_interp.get_tensor(self.vae_out_det[1]["index"])[0]
                             kl = float(0.5 * np.sum(np.square(mu_t) + np.exp(lv_t) - lv_t - 1.0))
+                            self.last_vae_error = kl
                             if kl > self.kl_threshold:
                                 is_ood = True
                         
@@ -224,12 +225,19 @@ class ShrugEngine(BaseWorkoutEngine):
             else:
                 self.stop_confirm_count = 0
 
+        details = {"nose_y": nose_y, "sho_y": shoulder_y, "line_y": shoulder_line_y if self.baseline_done else 0}
+        if hasattr(self, "last_vae_error"):
+            details["vae_error"] = self.last_vae_error
+            details["threshold"] = self.kl_threshold if hasattr(self, "kl_threshold") else 0
+            if not self.recording and feedback == FeedbackType.NONE:
+                delattr(self, "last_vae_error")
+
         return FrameResult(
             rep_count=self.rep_count_internal,
             feedback=feedback,
             confidence=conf,
             is_recording=self.recording,
-            details={"nose_y": nose_y, "sho_y": shoulder_y, "line_y": shoulder_line_y if self.baseline_done else 0}
+            details=details
         )
 
     def _predict(self, seq_feat, depth_feat):

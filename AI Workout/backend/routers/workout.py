@@ -48,7 +48,8 @@ async def workout_stream(websocket: WebSocket, session_id: str):
                     "feedback": result.get("feedback", "none").value if hasattr(result.get("feedback", "none"), "value") else result.get("feedback", "none"),
                     "feedback_message": result.get("feedback_message", ""),
                     "audio_cue": result.get("audio_cue", ""),
-                    "is_recording": result.get("is_recording", False)
+                    "is_recording": result.get("is_recording", False),
+                    "details": result.get("details", {})
                 }
                 
                 # Send the data to Flutter

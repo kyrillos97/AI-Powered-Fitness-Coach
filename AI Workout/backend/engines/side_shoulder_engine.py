@@ -191,7 +191,7 @@ class SideShoulderEngine(BaseWorkoutEngine):
         self.TEMPORAL_LENGTH = self.cfg["temporal_length"]
         self.LATENT_DIM = self.cfg["latent_dim"]
         self.HIDDEN_C = self.cfg["hidden_channels"]
-        self.THRESHOLD = 200 # Fixed as per user script
+        self.THRESHOLD = 6.8 # Fixed as per user script
         
         self.GLOBAL_MEAN = np.array(self.cfg["global_mean"], dtype=np.float32)
         self.GLOBAL_STD = np.array(self.cfg["global_std"], dtype=np.float32)
@@ -314,6 +314,7 @@ class SideShoulderEngine(BaseWorkoutEngine):
                         # Rep finished, evaluate it!
                         if self.reached_perfect:
                             is_valid, error = self.validate_rep_with_vae(self.buffer_kp)
+                            self.last_vae_error = float(error)
                             if is_valid:
                                 self.rep_count_internal += 1
                                 feedback = FeedbackType.PERFECT
@@ -331,12 +332,19 @@ class SideShoulderEngine(BaseWorkoutEngine):
                 else:
                     self.static_frame_counter = 0
 
+        details = {"angle": float(cur_M)}
+        if hasattr(self, "last_vae_error"):
+            details["vae_error"] = self.last_vae_error
+            details["threshold"] = self.THRESHOLD
+            if self.state == 0 and feedback == FeedbackType.NONE:
+                delattr(self, "last_vae_error")
+
         return FrameResult(
             rep_count=self.rep_count_internal,
             feedback=feedback,
             confidence=conf,
             is_recording=(self.state == 1),
-            details={"angle": float(cur_M)}
+            details=details
         )
 
     def draw_custom_visuals(self, render_frame, landmarks: list) -> None:

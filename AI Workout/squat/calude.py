@@ -403,7 +403,7 @@ def main(model_path, labels_path, camera_id):
     )
 
     # ── Webcam ────────────────────────────────────────────────────────────
-    cap = cv2.VideoCapture(camera_id)
+    cap = cv2.VideoCapture(0)
     cap.set(cv2.CAP_PROP_FRAME_WIDTH,  1280)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
     cap.set(cv2.CAP_PROP_FPS, 30)

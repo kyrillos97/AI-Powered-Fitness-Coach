@@ -36,7 +36,7 @@ PERFECT_RANGE_PCT = 0.50      # 50% from elbow to shoulder (Line 2 / Perfect Are
 OVER_SHOULDER_OFFSET = 0.05   # Offset above shoulder for Over Range (Line 3)
 
 # VAE & Recording
-VAE_REJECTION_THRESHOLD = 200 # Strictness for VAE rejection
+VAE_REJECTION_THRESHOLD = 6.5 # Strictness for VAE rejection
 PRE_BUFFER_SIZE = 10          # Frames kept before region trigger
 FPS_TARGET = 10               # Target processing FPS
 STATIC_CONFIRM = 5            # Frames of STATIC needed to confirm rep end

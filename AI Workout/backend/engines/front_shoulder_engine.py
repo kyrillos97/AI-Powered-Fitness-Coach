@@ -13,7 +13,7 @@ from .base_engine import BaseWorkoutEngine, FrameResult
 # ==============================================================================
 # CONFIGURATION
 # ==============================================================================
-VAE_REJECTION_THRESHOLD = 180.0  # Adjust this to make VAE stricter/looser
+VAE_REJECTION_THRESHOLD = 6.6  # Adjust this to make VAE stricter/looser
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # MODEL DEFINITION
@@ -115,7 +115,7 @@ class Region(Enum):
     OVER    = 3  # Above Line 3
 
 class BodyLines:
-    def __init__(self, low_pct=0.25, perfect_pct=0.50, over_offset=0.05):
+    def __init__(self, low_pct=0.50, perfect_pct=0.50, over_offset=0.05):
         self.calibrated = False
         self.offsets = {"low": None, "perfect": None, "over": None}
         self.low_pct = low_pct
@@ -291,6 +291,7 @@ class FrontShoulderEngine(BaseWorkoutEngine):
                     # Evaluate rep
                     if self.reached_perfect:
                         is_valid, error = self.validate_rep_with_vae(self.recorded_frames)
+                        self.last_vae_error = float(error)
                         if is_valid:
                             print(f"[Front Shoulder] VAE OK. Error={error:.4f} <= {self.THRESHOLD}")
                             self.rep_count_internal += 1
@@ -310,11 +311,20 @@ class FrontShoulderEngine(BaseWorkoutEngine):
             else:
                 self.frames_in_static = 0
 
+        details = {}
+        if hasattr(self, "last_vae_error"):
+            details["vae_error"] = self.last_vae_error
+            details["threshold"] = self.THRESHOLD
+            # Clear it so it only sends once per evaluation
+            if self.state == 0 and feedback == FeedbackType.NONE:
+                delattr(self, "last_vae_error")
+
         return FrameResult(
             rep_count=self.rep_count_internal,
             feedback=feedback,
             confidence=0.95,
-            is_recording=(self.state == 1)
+            is_recording=(self.state == 1),
+            details=details
         )
 
     def draw_custom_visuals(self, render_frame, landmarks: list) -> None:
