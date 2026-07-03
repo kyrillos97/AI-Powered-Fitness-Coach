@@ -1,3 +1,8 @@
+## 🎥 Demo Video
+
+▶ **Watch the demo here:** [demo.mp4](assets/demo.mp4)
+
+
 # SpotiFit - AI Fitness Coach
 
 Fitwise is a comprehensive Flutter-based fitness coaching application that utilizes on-device Artificial Intelligence to track user movements, count repetitions, and analyze exercise form in real-time. 
